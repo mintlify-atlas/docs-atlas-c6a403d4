@@ -1,0 +1,593 @@
+---
+title: Text Processing Commands
+description: Tools for manipulating and analyzing text in Lifo
+---
+
+Text processing commands provide powerful tools for searching, transforming, and analyzing text content.
+
+## Pattern Matching
+
+### grep
+
+Search text using regular expressions.
+
+**Usage:** `grep [options] pattern [file...]`
+
+**Options:**
+- `-i` - Case-insensitive search
+- `-v` - Invert match (show non-matching lines)
+- `-n` - Show line numbers
+- `-c` - Count matching lines
+- `-l` - List files with matches
+- `-r` - Recursive search
+- `-w` - Match whole words only
+- `-E` - Extended regex (default in Lifo)
+
+**Examples:**
+
+```bash
+# Simple search
+grep "error" logfile.txt
+
+# Case-insensitive
+grep -i "warning" logfile.txt
+
+# With line numbers
+grep -n "TODO" src/main.js
+
+# Count matches
+grep -c "function" script.js
+
+# Recursive search
+grep -r "import" src/
+
+# Multiple files
+grep "class" *.js
+
+# Invert match
+grep -v "#" config.txt
+
+# Word boundaries
+grep -w "test" file.txt
+```
+
+**Output example:**
+
+```
+$ grep -n "error" app.log
+42:Error: Connection timeout
+87:Fatal error: Out of memory
+156:Error: File not found
+```
+
+### sed
+
+Stream editor for text transformation.
+
+**Usage:** `sed [options] 'expression' [file...]`
+
+**Options:**
+- `-i` - Edit files in-place
+- `-e` - Add script expression
+
+**Expressions:**
+- `s/pattern/replacement/` - Substitute
+- `s/pattern/replacement/g` - Substitute all occurrences
+- `s/pattern/replacement/i` - Case-insensitive substitute
+- `d` - Delete lines
+- `p` - Print lines
+
+**Examples:**
+
+```bash
+# Replace first occurrence
+sed 's/old/new/' file.txt
+
+# Replace all occurrences
+sed 's/old/new/g' file.txt
+
+# Case-insensitive replace
+sed 's/error/warning/gi' log.txt
+
+# Delete lines matching pattern
+sed '/^#/d' config.txt
+
+# In-place editing
+sed -i 's/http:/https:/g' urls.txt
+
+# Multiple expressions
+sed -e 's/foo/bar/' -e 's/baz/qux/' file.txt
+```
+
+**Output example:**
+
+```
+$ echo "hello world" | sed 's/world/universe/'
+hello universe
+```
+
+### awk
+
+Pattern scanning and processing language.
+
+**Usage:** `awk [options] 'program' [file...]`
+
+**Options:**
+- `-F sep` - Field separator (default: whitespace)
+
+**Built-in variables:**
+- `$0` - Entire line
+- `$1, $2, ...` - Field values
+- `NR` - Line number
+- `NF` - Number of fields
+
+**Examples:**
+
+```bash
+# Print specific field
+awk '{print $2}' data.txt
+
+# Print multiple fields
+awk '{print $1, $3}' data.txt
+
+# Custom field separator
+awk -F',' '{print $2}' data.csv
+
+# Pattern matching
+awk '/error/ {print $0}' log.txt
+
+# Line numbers
+awk '{print NR, $0}' file.txt
+
+# BEGIN and END blocks
+awk 'BEGIN {sum=0} {sum+=$1} END {print sum}' numbers.txt
+
+# Conditional printing
+awk '$3 > 100 {print $1, $3}' data.txt
+```
+
+**Output example:**
+
+```
+$ echo -e "a 1\nb 2\nc 3" | awk '{print $2, $1}'
+1 a
+2 b
+3 c
+```
+
+## Line Selection
+
+### head
+
+Output the first part of files.
+
+**Usage:** `head [options] [file...]`
+
+**Options:**
+- `-n NUM` - Output first NUM lines (default: 10)
+
+**Examples:**
+
+```bash
+# First 10 lines
+head file.txt
+
+# First 5 lines
+head -n 5 file.txt
+
+# Multiple files
+head -n 3 file1.txt file2.txt
+```
+
+### tail
+
+Output the last part of files.
+
+**Usage:** `tail [options] [file...]`
+
+**Options:**
+- `-n NUM` - Output last NUM lines (default: 10)
+
+**Examples:**
+
+```bash
+# Last 10 lines
+tail file.txt
+
+# Last 20 lines
+tail -n 20 file.txt
+
+# View end of log
+tail -n 50 app.log
+```
+
+## Sorting and Filtering
+
+### sort
+
+Sort lines of text.
+
+**Usage:** `sort [options] [file...]`
+
+**Options:**
+- `-r` - Reverse order
+- `-n` - Numeric sort
+- `-u` - Unique (remove duplicates)
+- `-k N` - Sort by field N
+
+**Examples:**
+
+```bash
+# Alphabetical sort
+sort names.txt
+
+# Reverse sort
+sort -r names.txt
+
+# Numeric sort
+sort -n numbers.txt
+
+# Remove duplicates
+sort -u list.txt
+
+# Sort by second field
+sort -k 2 data.txt
+```
+
+### uniq
+
+Report or filter repeated lines.
+
+**Usage:** `uniq [options] [file]`
+
+**Options:**
+- `-c` - Count occurrences
+- `-d` - Only show duplicates
+- `-u` - Only show unique lines
+
+**Examples:**
+
+```bash
+# Remove adjacent duplicates
+uniq file.txt
+
+# Count occurrences
+uniq -c file.txt
+
+# Show only duplicates
+uniq -d file.txt
+
+# Show only unique
+uniq -u file.txt
+
+# Common pattern: sort then uniq
+sort file.txt | uniq -c
+```
+
+**Output example:**
+
+```
+$ sort animals.txt | uniq -c
+   3 cat
+   1 dog
+   2 fish
+```
+
+## Text Manipulation
+
+### cut
+
+Remove sections from lines.
+
+**Usage:** `cut [options] [file...]`
+
+**Options:**
+- `-d delim` - Field delimiter
+- `-f list` - Select fields (e.g., 1, 1-3, 1,3)
+- `-c list` - Select characters
+
+**Examples:**
+
+```bash
+# Extract first field
+cut -d',' -f1 data.csv
+
+# Multiple fields
+cut -d',' -f1,3 data.csv
+
+# Field range
+cut -d':' -f1-3 /etc/passwd
+
+# Character positions
+cut -c1-10 file.txt
+```
+
+### tr
+
+Translate or delete characters.
+
+**Usage:** `tr [options] set1 [set2]`
+
+**Options:**
+- `-d` - Delete characters
+- `-s` - Squeeze repeated characters
+
+**Examples:**
+
+```bash
+# Uppercase to lowercase
+echo "HELLO" | tr 'A-Z' 'a-z'
+
+# Delete characters
+echo "hello123" | tr -d '0-9'
+
+# Squeeze spaces
+echo "hello  world" | tr -s ' '
+
+# Replace characters
+echo "hello" | tr 'el' 'ip'
+```
+
+### rev
+
+Reverse lines characterwise.
+
+**Usage:** `rev [file...]`
+
+**Examples:**
+
+```bash
+# Reverse each line
+echo "hello" | rev
+# Output: olleh
+
+rev file.txt
+```
+
+### tac
+
+Concatenate and print files in reverse.
+
+**Usage:** `tac [file...]`
+
+**Examples:**
+
+```bash
+# Reverse line order
+tac file.txt
+
+# Reverse log file
+tac application.log
+```
+
+## Line Processing
+
+### wc
+
+Count lines, words, and characters.
+
+**Usage:** `wc [options] [file...]`
+
+**Options:**
+- `-l` - Count lines only
+- `-w` - Count words only
+- `-c` - Count characters only
+
+**Examples:**
+
+```bash
+# All counts
+wc file.txt
+
+# Line count only
+wc -l file.txt
+
+# Word count
+wc -w file.txt
+
+# Character count
+wc -c file.txt
+
+# Multiple files
+wc -l *.txt
+```
+
+**Output example:**
+
+```
+$ wc file.txt
+  42  256  1847 file.txt
+```
+
+### nl
+
+Number lines of files.
+
+**Usage:** `nl [options] [file...]`
+
+**Options:**
+- `-b a` - Number all lines
+- `-b t` - Number non-empty lines only
+
+**Examples:**
+
+```bash
+# Number all lines
+nl file.txt
+
+# Number non-empty lines
+nl -b t file.txt
+```
+
+### seq
+
+Print numeric sequences.
+
+**Usage:** `seq [first] [increment] last`
+
+**Examples:**
+
+```bash
+# 1 to 10
+seq 10
+
+# 5 to 15
+seq 5 15
+
+# With increment
+seq 0 5 100
+
+# Negative sequence
+seq 10 -1 1
+```
+
+## File Comparison
+
+### diff
+
+Compare files line by line.
+
+**Usage:** `diff [options] file1 file2`
+
+**Options:**
+- `-u` - Unified format
+- `-c` - Context format
+- `-q` - Brief (report only if files differ)
+
+**Examples:**
+
+```bash
+# Compare files
+diff old.txt new.txt
+
+# Unified format
+diff -u original.txt modified.txt
+
+# Quick check
+diff -q file1.txt file2.txt
+```
+
+**Output example:**
+
+```
+$ diff old.txt new.txt
+3c3
+< old line
+---
+> new line
+```
+
+## Encoding
+
+### base64
+
+Base64 encode/decode data.
+
+**Usage:** `base64 [options] [file]`
+
+**Options:**
+- `-d` - Decode data
+
+**Examples:**
+
+```bash
+# Encode
+echo "hello" | base64
+
+# Decode
+echo "aGVsbG8K" | base64 -d
+
+# Encode file
+base64 image.png > image.b64
+
+# Decode file
+base64 -d image.b64 > image.png
+```
+
+### strings
+
+Print printable character sequences.
+
+**Usage:** `strings [file...]`
+
+**Examples:**
+
+```bash
+# Extract readable text from binary
+strings binary_file
+
+# Find text in executable
+strings program.exe | grep "version"
+```
+
+## Text Editors
+
+### nano
+
+Simple text editor.
+
+**Usage:** `nano [file]`
+
+**Examples:**
+
+```bash
+# Edit file
+nano document.txt
+
+# Create new file
+nano newfile.txt
+```
+
+### less
+
+File pager for viewing text.
+
+**Usage:** `less [file]`
+
+**Examples:**
+
+```bash
+# View file
+less document.txt
+
+# Pipe to less
+cat large.log | less
+```
+
+## Common Patterns
+
+### Extract email addresses
+
+```bash
+grep -Eo '[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}' file.txt
+```
+
+### Count word frequency
+
+```bash
+cat file.txt | tr ' ' '\n' | sort | uniq -c | sort -rn
+```
+
+### Remove empty lines
+
+```bash
+grep -v '^$' file.txt
+```
+
+### Extract specific columns from CSV
+
+```bash
+cut -d',' -f2,4 data.csv
+```
+
+### Replace text in multiple files
+
+```bash
+find . -name "*.txt" -exec sed -i 's/old/new/g' {} \;
+```
+
+### Line count by extension
+
+```bash
+find . -name "*.js" | xargs wc -l | tail -1
+```

@@ -1,0 +1,400 @@
+---
+title: Node.js Compatibility
+description: Run Node.js code in the browser with Lifo's built-in Node compatibility layer
+---
+
+Lifo provides compatibility shims for core Node.js modules, allowing you to run Node.js code directly in the browser environment. These modules are powered by the VFS and provide familiar Node.js APIs.
+
+## Available Modules
+
+Lifo includes compatibility shims for **15 core Node.js modules**:
+
+- `fs` / `fs/promises` - Filesystem operations backed by VFS
+- `path` - Path manipulation (POSIX-compliant)
+- `os` - Operating system utilities
+- `process` - Process information and environment
+- `events` - EventEmitter implementation
+- `buffer` - Buffer class for binary data
+- `util` - Utility functions (promisify, format, inspect)
+- `http` / `https` - Virtual HTTP server via port registry
+- `child_process` - Spawn shell commands
+- `stream` - Readable, Writable, Transform streams
+- `url` - URL parsing and manipulation
+- `timers` - setTimeout, setInterval, setImmediate
+- `crypto` - Cryptographic functions (Web Crypto API)
+- `zlib` - Compression/decompression (gzip, deflate)
+- `string_decoder` - String decoding for character encodings
+- `querystring` - Query string parsing
+- `assert` - Assertion testing
+
+## Running Node.js Code
+
+### Using the `node` Command
+
+The easiest way to run Node.js code is with the built-in `node` command:
+
+```typescript
+import { Sandbox } from '@lifo/core';
+
+const sandbox = await Sandbox.create({
+  files: {
+    '/home/user/app.js': `
+      const fs = require('fs');
+      const path = require('path');
+      
+      // Write a file
+      fs.writeFileSync('output.txt', 'Hello from Node.js!');
+      
+      // Read it back
+      const content = fs.readFileSync('output.txt', 'utf-8');
+      console.log('Content:', content);
+      
+      // Use path utilities
+      console.log('Filename:', path.basename(__filename));
+    `
+  }
+});
+
+// Run the Node script
+const result = await sandbox.commands.run('node app.js');
+console.log(result.stdout);
+// Output:
+// Content: Hello from Node.js!
+// Filename: app.js
+```
+
+### Module Resolution
+
+The Node compatibility layer uses a custom `require()` implementation that maps module names to Lifo's shims:
+
+```javascript
+// In your Node script inside Lifo:
+const fs = require('fs');           // → Lifo's VFS-backed fs shim
+const path = require('path');       // → Lifo's path module
+const process = require('process'); // → Lifo's process shim
+
+// All work seamlessly in the browser!
+```
+
+## Filesystem Module (`fs`)
+
+The `fs` module is backed by Lifo's VFS and provides both sync and async APIs:
+
+### Synchronous API
+
+```javascript
+const fs = require('fs');
+
+// Read files
+const text = fs.readFileSync('/home/user/file.txt', 'utf-8');
+const binary = fs.readFileSync('/home/user/image.png');
+
+// Write files
+fs.writeFileSync('/tmp/output.txt', 'Hello, world!');
+
+// Directory operations
+fs.mkdirSync('/tmp/mydir', { recursive: true });
+const entries = fs.readdirSync('/home/user');
+
+// File info
+const stats = fs.statSync('/home/user/file.txt');
+console.log(stats.isFile());      // true
+console.log(stats.isDirectory()); // false
+console.log(stats.size);          // file size in bytes
+
+// Check existence
+if (fs.existsSync('/home/user/config.json')) {
+  const config = JSON.parse(fs.readFileSync('/home/user/config.json', 'utf-8'));
+}
+```
+
+### Promises API
+
+```javascript
+const fs = require('fs/promises');
+
+// All operations return Promises
+await fs.writeFile('/tmp/async.txt', 'async content');
+const content = await fs.readFile('/tmp/async.txt', 'utf-8');
+
+const entries = await fs.readdir('/home/user');
+for (const entry of entries) {
+  console.log(entry.name, entry.type);
+}
+```
+
+## Process Module
+
+The `process` module provides Node.js process information:
+
+```javascript
+const process = require('process');
+
+// Environment variables
+console.log(process.env.HOME);    // "/home/user"
+console.log(process.env.PATH);    // "/usr/bin:/bin"
+process.env.MY_VAR = 'custom';    // Set env var
+
+// Current working directory
+console.log(process.cwd());       // "/home/user"
+
+// Command line arguments
+console.log(process.argv);
+// ["node", "/home/user/script.js", ...args]
+
+// Standard streams
+process.stdout.write('Hello\n');
+process.stderr.write('Error message\n');
+
+// Platform info
+console.log(process.platform);    // "linux"
+console.log(process.arch);        // "x64"
+
+// Exit
+process.exit(0); // Exit with code
+```
+
+## Path Module
+
+The `path` module provides POSIX path utilities:
+
+```javascript
+const path = require('path');
+
+// Join paths
+const joined = path.join('/home', 'user', 'file.txt');
+console.log(joined); // "/home/user/file.txt"
+
+// Resolve absolute path
+const absolute = path.resolve('relative/path');
+console.log(absolute); // "/home/user/relative/path"
+
+// Parse path
+const parsed = path.parse('/home/user/doc.txt');
+console.log(parsed);
+// {
+//   root: '/',
+//   dir: '/home/user',
+//   base: 'doc.txt',
+//   ext: '.txt',
+//   name: 'doc'
+// }
+
+// Extract parts
+console.log(path.basename('/home/user/file.txt'));  // "file.txt"
+console.log(path.dirname('/home/user/file.txt'));   // "/home/user"
+console.log(path.extname('/home/user/file.txt'));   // ".txt"
+
+// Path separator
+console.log(path.sep); // "/"
+```
+
+## Events Module
+
+The `events` module provides the EventEmitter class:
+
+```javascript
+const { EventEmitter } = require('events');
+
+class MyEmitter extends EventEmitter {}
+
+const emitter = new MyEmitter();
+
+// Listen for events
+emitter.on('data', (value) => {
+  console.log('Received:', value);
+});
+
+// Emit events
+emitter.emit('data', 42);         // "Received: 42"
+
+// Once listener
+emitter.once('done', () => {
+  console.log('Done!');
+});
+
+emitter.emit('done'); // "Done!"
+emitter.emit('done'); // (no output, listener removed)
+```
+
+## Buffer Module
+
+The `buffer` module provides the Buffer class for binary data:
+
+```javascript
+const { Buffer } = require('buffer');
+
+// Create buffers
+const buf1 = Buffer.from('Hello');
+const buf2 = Buffer.from([72, 101, 108, 108, 111]);
+const buf3 = Buffer.alloc(10);
+
+// Convert to string
+console.log(buf1.toString()); // "Hello"
+console.log(buf1.toString('hex')); // "48656c6c6f"
+
+// Manipulate bytes
+buf3.write('Hi', 0, 'utf-8');
+console.log(buf3[0]); // 72 ('H')
+
+// Concatenate
+const combined = Buffer.concat([buf1, buf2]);
+
+// Length
+console.log(buf1.length); // 5
+```
+
+## Child Process Module
+
+The `child_process` module allows spawning shell commands:
+
+```javascript
+const { execSync, exec } = require('child_process');
+
+// Synchronous execution
+const output = execSync('ls -la', { encoding: 'utf-8' });
+console.log(output);
+
+// Async execution
+exec('echo hello', (error, stdout, stderr) => {
+  if (error) {
+    console.error('Error:', error);
+    return;
+  }
+  console.log('Output:', stdout);
+});
+```
+
+## HTTP Module
+
+The `http` module provides a virtual HTTP server using Lifo's port registry:
+
+```javascript
+const http = require('http');
+
+const server = http.createServer((req, res) => {
+  console.log('Request:', req.method, req.url);
+  
+  res.writeHead(200, { 'Content-Type': 'text/plain' });
+  res.end('Hello from Lifo HTTP server!\n');
+});
+
+server.listen(8080, () => {
+  console.log('Server listening on port 8080');
+});
+
+// Now you can use curl to test it:
+// $ curl http://localhost:8080
+```
+
+## Complete Example: Express-like Server
+
+Here's a complete example running a simple HTTP server:
+
+```typescript
+import { Sandbox } from '@lifo/core';
+
+const sandbox = await Sandbox.create({
+  files: {
+    '/home/user/server.js': `
+      const http = require('http');
+      const url = require('url');
+      
+      const server = http.createServer((req, res) => {
+        const parsedUrl = url.parse(req.url, true);
+        
+        if (parsedUrl.pathname === '/') {
+          res.writeHead(200, { 'Content-Type': 'text/html' });
+          res.end('<h1>Welcome to Lifo!</h1>');
+        } else if (parsedUrl.pathname === '/api/status') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ status: 'ok', uptime: Date.now() }));
+        } else {
+          res.writeHead(404, { 'Content-Type': 'text/plain' });
+          res.end('Not found');
+        }
+      });
+      
+      server.listen(3000, () => {
+        console.log('Server running on http://localhost:3000');
+      });
+    `
+  }
+});
+
+// Start the server
+const serverProcess = sandbox.commands.run('node server.js');
+
+// In another command, test it
+const response = await sandbox.commands.run('curl http://localhost:3000');
+console.log(response.stdout); // "<h1>Welcome to Lifo!</h1>"
+
+const apiResponse = await sandbox.commands.run('curl http://localhost:3000/api/status');
+console.log(apiResponse.stdout); // {"status":"ok","uptime":...}
+```
+
+## Other Modules
+
+### Crypto
+
+```javascript
+const crypto = require('crypto');
+
+// Generate random bytes
+const random = crypto.randomBytes(16).toString('hex');
+
+// Hashing
+const hash = crypto.createHash('sha256')
+  .update('Hello, world!')
+  .digest('hex');
+```
+
+### Zlib (Compression)
+
+```javascript
+const zlib = require('zlib');
+
+// Compress
+const compressed = zlib.gzipSync('Hello, world!');
+
+// Decompress
+const decompressed = zlib.gunzipSync(compressed).toString();
+console.log(decompressed); // "Hello, world!"
+```
+
+### Util
+
+```javascript
+const util = require('util');
+
+// Promisify callback-based functions
+const fs = require('fs');
+const readFileAsync = util.promisify(fs.readFile);
+
+// Format strings
+const message = util.format('User %s has %d points', 'Alice', 42);
+console.log(message); // "User Alice has 42 points"
+
+// Inspect objects
+console.log(util.inspect({ a: 1, b: { c: 2 } }, { depth: 2 }));
+```
+
+## Limitations
+
+<Warning>
+  While Lifo's Node compatibility layer is powerful, there are some limitations:
+
+  - No native modules or C++ addons
+  - No network access outside virtual networking
+  - No multi-threading or worker threads
+  - Limited `child_process` (only shell commands, no arbitrary process spawning)
+  - Synchronous I/O (VFS operations are sync, wrapped in async interfaces)
+</Warning>
+
+## NPM Package Support
+
+See the [Package System guide](/guides/package-system) to learn how to install and use NPM packages inside Lifo.
+
+## API Reference
+
+See the [Node Compatibility API reference](/api-reference/node-compat) for complete module documentation.

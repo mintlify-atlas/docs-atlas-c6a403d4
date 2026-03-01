@@ -1,0 +1,541 @@
+---
+title: Virtual Providers
+description: Create virtual filesystems for /proc and /dev style dynamic content
+---
+
+Virtual providers enable you to create dynamic filesystems that generate content on-the-fly, similar to Linux's `/proc` and `/dev` directories. These providers don't store actual files—they generate data in response to read operations.
+
+## VirtualProvider Interface
+
+The `VirtualProvider` interface defines the contract for read-only virtual filesystems:
+
+```typescript
+// src/kernel/vfs/types.ts:58-65
+interface VirtualProvider {
+  readFile(subpath: string): Uint8Array;
+  readFileString(subpath: string): string;
+  writeFile?(subpath: string, content: string | Uint8Array): void;
+  exists(subpath: string): boolean;
+  stat(subpath: string): Stat;
+  readdir(subpath: string): Dirent[];
+}
+```
+
+### Type Definitions
+
+```typescript
+// src/kernel/vfs/types.ts:33-45
+interface Stat {
+  type: 'file' | 'directory';
+  size: number;
+  ctime: number;  // Creation time (ms)
+  mtime: number;  // Modification time (ms)
+  mode: number;   // Unix permissions (e.g., 0o444 for read-only)
+  mime?: string;  // MIME type
+}
+
+interface Dirent {
+  name: string;
+  type: 'file' | 'directory';
+}
+```
+
+## Creating a Simple Virtual Provider
+
+<Steps>
+
+<Step title="Implement the interface">
+
+Create a provider that exposes system time:
+
+```typescript
+import type { VirtualProvider, Stat, Dirent } from '@lifo/core/kernel/vfs/types';
+import { VFSError, ErrorCode } from '@lifo/core/kernel/vfs/types';
+import { encode } from '@lifo/core/utils/encoding';
+
+export class TimeProvider implements VirtualProvider {
+  private files = new Set(['timestamp', 'iso', 'unix']);
+
+  readFileString(subpath: string): string {
+    const name = subpath.startsWith('/') ? subpath.slice(1) : subpath;
+    const now = new Date();
+
+    switch (name) {
+      case 'timestamp':
+        return now.toISOString();
+      case 'iso':
+        return now.toISOString().split('T')[0];
+      case 'unix':
+        return Math.floor(now.getTime() / 1000).toString();
+      default:
+        throw new VFSError(ErrorCode.ENOENT, `'/time${subpath}': no such file`);
+    }
+  }
+
+  readFile(subpath: string): Uint8Array {
+    return encode(this.readFileString(subpath));
+  }
+
+  exists(subpath: string): boolean {
+    if (subpath === '/') return true;
+    const name = subpath.startsWith('/') ? subpath.slice(1) : subpath;
+    return this.files.has(name);
+  }
+
+  stat(subpath: string): Stat {
+    if (!this.exists(subpath)) {
+      throw new VFSError(ErrorCode.ENOENT, `'/time${subpath}': no such file`);
+    }
+
+    if (subpath === '/') {
+      return {
+        type: 'directory',
+        size: this.files.size,
+        ctime: 0,
+        mtime: Date.now(),
+        mode: 0o555  // r-xr-xr-x
+      };
+    }
+
+    const content = this.readFileString(subpath);
+    return {
+      type: 'file',
+      size: content.length,
+      ctime: 0,
+      mtime: Date.now(),
+      mode: 0o444  // r--r--r--
+    };
+  }
+
+  readdir(subpath: string): Dirent[] {
+    if (subpath === '/') {
+      return Array.from(this.files).map(name => ({
+        name,
+        type: 'file' as const
+      }));
+    }
+
+    throw new VFSError(ErrorCode.ENOTDIR, `'/time${subpath}': not a directory`);
+  }
+}
+```
+
+</Step>
+
+<Step title="Mount the provider">
+
+Mount your provider to a path:
+
+```typescript
+import { VFS } from '@lifo/core/kernel/vfs';
+
+const vfs = new VFS();
+const timeProvider = new TimeProvider();
+vfs.mount('/time', timeProvider);
+```
+
+Now you can access virtual files:
+
+```bash
+cat /time/timestamp   # 2026-03-01T12:00:00.000Z
+cat /time/unix        # 1740826800
+ls /time              # timestamp  iso  unix
+```
+
+</Step>
+
+</Steps>
+
+## Real-World Example: /proc Provider
+
+Lifo's built-in `/proc` provider generates system information dynamically:
+
+```typescript
+// Based on src/kernel/vfs/providers/ProcProvider.ts:5-57
+export class ProcProvider implements VirtualProvider {
+  private generators = new Map<string, () => string>();
+
+  constructor() {
+    // CPU information
+    this.generators.set('cpuinfo', () => {
+      const cores = typeof navigator !== 'undefined'
+        ? navigator.hardwareConcurrency ?? 1
+        : 1;
+      const lines: string[] = [];
+      for (let i = 0; i < cores; i++) {
+        lines.push(`processor\t: ${i}`);
+        lines.push(`model name\t: Browser Virtual CPU`);
+        lines.push(`cpu cores\t: ${cores}`);
+        lines.push('');
+      }
+      return lines.join('\n');
+    });
+
+    // Memory information
+    this.generators.set('meminfo', () => {
+      const memory = (performance as any)?.memory;
+      if (memory) {
+        const totalKB = Math.floor(memory.jsHeapSizeLimit / 1024);
+        const usedKB = Math.floor(memory.usedJSHeapSize / 1024);
+        const freeKB = totalKB - usedKB;
+        return [
+          `MemTotal:       ${totalKB} kB`,
+          `MemFree:        ${freeKB} kB`,
+          `MemUsed:        ${usedKB} kB`,
+          '',
+        ].join('\n');
+      }
+      return 'Memory info not available\n';
+    });
+
+    // System uptime
+    this.generators.set('uptime', () => {
+      const seconds = (performance.now() / 1000).toFixed(2);
+      return `${seconds} ${seconds}\n`;
+    });
+  }
+
+  readFileString(subpath: string): string {
+    const name = subpath.startsWith('/') ? subpath.slice(1) : subpath;
+    const gen = this.generators.get(name);
+    
+    if (!gen) {
+      throw new VFSError(ErrorCode.ENOENT, `'/proc${subpath}': no such file`);
+    }
+    
+    return gen();
+  }
+
+  // ... other methods similar to TimeProvider
+}
+```
+
+Usage:
+
+```bash
+cat /proc/cpuinfo     # Show CPU info
+cat /proc/meminfo     # Show memory usage
+cat /proc/uptime      # Show system uptime
+```
+
+## Writable Virtual Provider: /dev Example
+
+The `/dev` provider demonstrates both read and write capabilities:
+
+```typescript
+// Based on src/kernel/vfs/providers/DevProvider.ts:7-77
+export class DevProvider implements VirtualProvider {
+  private clipboardCache = '';
+
+  readFileString(subpath: string): string {
+    const name = subpath.startsWith('/') ? subpath.slice(1) : subpath;
+
+    switch (name) {
+      case 'null':
+        return '';  // Always empty
+      
+      case 'zero':
+        return '\0'.repeat(1024);  // Return zeros
+      
+      case 'random':
+      case 'urandom': {
+        const buf = new Uint8Array(256);
+        crypto.getRandomValues(buf);
+        return Array.from(buf)
+          .map(b => String.fromCharCode(b))
+          .join('');
+      }
+      
+      case 'clipboard':
+        return this.clipboardCache;
+      
+      default:
+        throw new VFSError(ErrorCode.ENOENT, `'/dev${subpath}': no such device`);
+    }
+  }
+
+  writeFile(subpath: string, content: string | Uint8Array): void {
+    const name = subpath.startsWith('/') ? subpath.slice(1) : subpath;
+
+    switch (name) {
+      case 'null':
+        // Discard all data (like /dev/null)
+        return;
+      
+      case 'clipboard': {
+        const text = typeof content === 'string'
+          ? content
+          : new TextDecoder().decode(content);
+        
+        this.clipboardCache = text;
+        
+        // Attempt to write to system clipboard
+        if (navigator.clipboard?.writeText) {
+          navigator.clipboard.writeText(text).catch(() => {});
+        }
+        return;
+      }
+      
+      default:
+        throw new VFSError(ErrorCode.EINVAL, `'/dev${subpath}': cannot write to device`);
+    }
+  }
+
+  // ... other methods
+}
+```
+
+Usage:
+
+```bash
+echo "test" > /dev/null        # Discard output
+head -c 32 /dev/random          # Get random bytes
+echo "copy me" > /dev/clipboard # Copy to clipboard
+cat /dev/clipboard              # Read from clipboard
+```
+
+## Hierarchical Virtual Filesystems
+
+Create nested directory structures:
+
+```typescript
+export class MetricsProvider implements VirtualProvider {
+  private metrics = {
+    http: { requests: 0, errors: 0 },
+    db: { queries: 0, slow: 0 }
+  };
+
+  readFileString(subpath: string): string {
+    const path = subpath.startsWith('/') ? subpath.slice(1) : subpath;
+    
+    // Handle nested paths
+    if (path === 'http/requests') {
+      return this.metrics.http.requests.toString();
+    }
+    if (path === 'http/errors') {
+      return this.metrics.http.errors.toString();
+    }
+    if (path === 'db/queries') {
+      return this.metrics.db.queries.toString();
+    }
+    if (path === 'db/slow') {
+      return this.metrics.db.slow.toString();
+    }
+    
+    throw new VFSError(ErrorCode.ENOENT, `'/metrics${subpath}': no such file`);
+  }
+
+  exists(subpath: string): boolean {
+    if (subpath === '/') return true;
+    if (subpath === '/http' || subpath === '/db') return true;
+    
+    const validPaths = [
+      '/http/requests', '/http/errors',
+      '/db/queries', '/db/slow'
+    ];
+    return validPaths.includes(subpath);
+  }
+
+  stat(subpath: string): Stat {
+    if (!this.exists(subpath)) {
+      throw new VFSError(ErrorCode.ENOENT, `'/metrics${subpath}': no such file`);
+    }
+
+    // Root or category directories
+    if (subpath === '/' || subpath === '/http' || subpath === '/db') {
+      return {
+        type: 'directory',
+        size: 0,
+        ctime: 0,
+        mtime: Date.now(),
+        mode: 0o555
+      };
+    }
+
+    // Metric files
+    const content = this.readFileString(subpath);
+    return {
+      type: 'file',
+      size: content.length,
+      ctime: 0,
+      mtime: Date.now(),
+      mode: 0o444
+    };
+  }
+
+  readdir(subpath: string): Dirent[] {
+    if (subpath === '/') {
+      return [
+        { name: 'http', type: 'directory' },
+        { name: 'db', type: 'directory' }
+      ];
+    }
+
+    if (subpath === '/http') {
+      return [
+        { name: 'requests', type: 'file' },
+        { name: 'errors', type: 'file' }
+      ];
+    }
+
+    if (subpath === '/db') {
+      return [
+        { name: 'queries', type: 'file' },
+        { name: 'slow', type: 'file' }
+      ];
+    }
+
+    throw new VFSError(ErrorCode.ENOTDIR, `'/metrics${subpath}': not a directory`);
+  }
+
+  // ... readFile implementation
+}
+```
+
+Usage:
+
+```bash
+ls /metrics                # http/  db/
+cat /metrics/http/requests # 12345
+tree /metrics              # Show hierarchy
+```
+
+## Dynamic Content Generation
+
+Generate content based on current state:
+
+```typescript
+export class ProcessProvider implements VirtualProvider {
+  private processes = new Map<number, { name: string; started: number }>();
+
+  // Method to register processes (called by your app)
+  register(pid: number, name: string): void {
+    this.processes.set(pid, { name, started: Date.now() });
+  }
+
+  readFileString(subpath: string): string {
+    const name = subpath.startsWith('/') ? subpath.slice(1) : subpath;
+
+    // List all PIDs
+    if (name === 'status') {
+      const lines = ['PID\tNAME\tUPTIME'];
+      for (const [pid, proc] of this.processes) {
+        const uptime = Math.floor((Date.now() - proc.started) / 1000);
+        lines.push(`${pid}\t${proc.name}\t${uptime}s`);
+      }
+      return lines.join('\n') + '\n';
+    }
+
+    // Individual process info
+    const pid = parseInt(name, 10);
+    if (!isNaN(pid) && this.processes.has(pid)) {
+      const proc = this.processes.get(pid)!;
+      return JSON.stringify(proc, null, 2) + '\n';
+    }
+
+    throw new VFSError(ErrorCode.ENOENT, `'/proc${subpath}': no such file`);
+  }
+
+  readdir(subpath: string): Dirent[] {
+    if (subpath === '/') {
+      const entries: Dirent[] = [
+        { name: 'status', type: 'file' }
+      ];
+      for (const pid of this.processes.keys()) {
+        entries.push({ name: pid.toString(), type: 'file' });
+      }
+      return entries;
+    }
+
+    throw new VFSError(ErrorCode.ENOTDIR, `'/proc${subpath}': not a directory`);
+  }
+
+  // ... other methods
+}
+```
+
+## Error Handling
+
+Always use `VFSError` for consistent error reporting:
+
+```typescript
+import { VFSError, ErrorCode } from '@lifo/core/kernel/vfs/types';
+
+// File not found
+throw new VFSError(ErrorCode.ENOENT, `'${path}': no such file`);
+
+// Not a directory
+throw new VFSError(ErrorCode.ENOTDIR, `'${path}': not a directory`);
+
+// Is a directory (when expecting file)
+throw new VFSError(ErrorCode.EISDIR, `'${path}': is a directory`);
+
+// Invalid operation
+throw new VFSError(ErrorCode.EINVAL, `'${path}': invalid operation`);
+```
+
+## Unix Permissions
+
+Use octal mode values for file permissions:
+
+```typescript
+// Read-only file
+mode: 0o444  // r--r--r--
+
+// Read-only directory
+mode: 0o555  // r-xr-xr-x
+
+// Read-write file
+mode: 0o666  // rw-rw-rw-
+
+// Read-write directory
+mode: 0o755  // rwxr-xr-x
+```
+
+## Best Practices
+
+1. **Lazy generation**: Generate content on-demand in `readFile()`/`readFileString()`
+2. **Consistent paths**: Normalize subpaths by stripping leading slashes
+3. **Error codes**: Use appropriate `ErrorCode` values for different errors
+4. **Stateless when possible**: Avoid storing state unless necessary (like `/dev/clipboard`)
+5. **Performance**: Keep generators fast—they're called on every read
+6. **Root directory**: Always handle `subpath === '/'` correctly
+7. **Directory listing**: Return complete and accurate `readdir()` results
+8. **Timestamps**: Use `0` for static content, `Date.now()` for dynamic content
+9. **MIME types**: Set `mime` in `Stat` for proper file type detection
+10. **Cleanup**: Implement cleanup logic if provider maintains resources
+
+## Testing Virtual Providers
+
+```typescript
+import { describe, it, expect } from 'vitest';
+import { TimeProvider } from './time-provider';
+
+describe('TimeProvider', () => {
+  const provider = new TimeProvider();
+
+  it('generates timestamp', () => {
+    const ts = provider.readFileString('/timestamp');
+    expect(ts).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
+  });
+
+  it('lists files', () => {
+    const entries = provider.readdir('/');
+    expect(entries).toHaveLength(3);
+    expect(entries.map(e => e.name)).toContain('timestamp');
+  });
+
+  it('throws ENOENT for missing files', () => {
+    expect(() => provider.readFileString('/missing'))
+      .toThrow('ENOENT');
+  });
+
+  it('returns correct stat', () => {
+    const stat = provider.stat('/timestamp');
+    expect(stat.type).toBe('file');
+    expect(stat.mode).toBe(0o444);
+  });
+});
+```
+
+See [Custom Commands](/advanced/custom-commands) for creating commands that use virtual providers, and [VFS API](/api/vfs) for the full filesystem interface.

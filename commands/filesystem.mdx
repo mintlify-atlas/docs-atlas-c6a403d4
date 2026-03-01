@@ -1,0 +1,562 @@
+---
+title: File System Commands
+description: Commands for file and directory manipulation in Lifo
+---
+
+File system commands provide tools for navigating, creating, modifying, and managing files and directories in the virtual filesystem.
+
+## Directory Listing
+
+### ls
+
+List directory contents with various formatting options.
+
+**Usage:** `ls [options] [path...]`
+
+**Options:**
+- `-l` - Long format with permissions, size, and date
+- `-a` - Show hidden files (starting with `.`)
+- `-1` - One entry per line
+
+**Examples:**
+
+```bash
+# List current directory
+ls
+
+# Long format with details
+ls -l
+
+# Show all files including hidden
+ls -la
+
+# List specific directory
+ls /home/user/documents
+```
+
+**Output example:**
+
+```
+$ ls -l
+-rw-r--r--  1 user user   1234 Jan 15 10:30 file.txt
+drwxr-xr-x  1 user user    512 Jan 14 09:15 docs
+-rwxr-xr-x  1 user user   4096 Jan 16 14:22 script.sh
+```
+
+## File Content
+
+### cat
+
+Concatenate and display file contents.
+
+**Usage:** `cat [file...]`
+
+**Examples:**
+
+```bash
+# Display file content
+cat file.txt
+
+# Concatenate multiple files
+cat file1.txt file2.txt
+
+# Read from stdin (for piping)
+echo "hello" | cat
+```
+
+### head
+
+Output the first part of files.
+
+**Usage:** `head [options] [file...]`
+
+**Options:**
+- `-n NUM` - Output first NUM lines (default: 10)
+
+**Examples:**
+
+```bash
+# First 10 lines
+head file.txt
+
+# First 5 lines
+head -n 5 file.txt
+```
+
+### tail
+
+Output the last part of files.
+
+**Usage:** `tail [options] [file...]`
+
+**Options:**
+- `-n NUM` - Output last NUM lines (default: 10)
+
+**Examples:**
+
+```bash
+# Last 10 lines
+tail file.txt
+
+# Last 20 lines
+tail -n 20 file.txt
+```
+
+## File Operations
+
+### cp
+
+Copy files and directories.
+
+**Usage:** `cp [options] source dest`
+
+**Options:**
+- `-r` - Copy directories recursively
+
+**Examples:**
+
+```bash
+# Copy file
+cp file.txt backup.txt
+
+# Copy directory recursively
+cp -r mydir mydir_backup
+
+# Copy to different location
+cp file.txt /home/user/documents/
+```
+
+### mv
+
+Move or rename files and directories.
+
+**Usage:** `mv source dest`
+
+**Examples:**
+
+```bash
+# Rename file
+mv oldname.txt newname.txt
+
+# Move file to directory
+mv file.txt /home/user/documents/
+
+# Move directory
+mv mydir /home/user/newlocation/
+```
+
+### rm
+
+Remove files and directories.
+
+**Usage:** `rm [options] file...`
+
+**Options:**
+- `-r` - Remove directories recursively
+- `-f` - Force removal without prompting
+
+**Examples:**
+
+```bash
+# Remove file
+rm file.txt
+
+# Remove directory and contents
+rm -r mydir
+
+# Force remove multiple files
+rm -rf temp1 temp2 temp3
+```
+
+### touch
+
+Create empty files or update timestamps.
+
+**Usage:** `touch file...`
+
+**Examples:**
+
+```bash
+# Create empty file
+touch newfile.txt
+
+# Create multiple files
+touch file1.txt file2.txt file3.txt
+
+# Update timestamp of existing file
+touch existing.txt
+```
+
+## Directory Operations
+
+### mkdir
+
+Create directories.
+
+**Usage:** `mkdir [options] directory...`
+
+**Options:**
+- `-p` - Create parent directories as needed
+
+**Examples:**
+
+```bash
+# Create directory
+mkdir mydir
+
+# Create nested directories
+mkdir -p parent/child/grandchild
+
+# Create multiple directories
+mkdir dir1 dir2 dir3
+```
+
+### rmdir
+
+Remove empty directories.
+
+**Usage:** `rmdir directory...`
+
+**Examples:**
+
+```bash
+# Remove empty directory
+rmdir emptydir
+
+# Remove multiple empty directories
+rmdir dir1 dir2 dir3
+```
+
+## File Search
+
+### find
+
+Search for files in directory hierarchy.
+
+**Usage:** `find [path] [options]`
+
+**Options:**
+- `-name pattern` - Match filename pattern
+- `-type f|d` - Match files (f) or directories (d)
+- `-maxdepth N` - Limit search depth
+
+**Examples:**
+
+```bash
+# Find all .txt files
+find . -name "*.txt"
+
+# Find directories only
+find /home -type d
+
+# Find files with depth limit
+find . -maxdepth 2 -name "*.js"
+
+# Combine filters
+find . -type f -name "test*.js"
+```
+
+**Output example:**
+
+```
+$ find . -name "*.md"
+./README.md
+./docs/guide.md
+./docs/api.md
+```
+
+### tree
+
+Display directory tree structure.
+
+**Usage:** `tree [options] [path]`
+
+**Options:**
+- `-L N` - Limit depth to N levels
+- `-d` - Show directories only
+
+**Examples:**
+
+```bash
+# Show full tree
+tree
+
+# Limit to 2 levels
+tree -L 2
+
+# Directories only
+tree -d
+```
+
+**Output example:**
+
+```
+$ tree -L 2
+.
+├── README.md
+├── src
+│   ├── index.js
+│   └── utils
+└── package.json
+
+2 directories, 3 files
+```
+
+## File Information
+
+### stat
+
+Display file status information.
+
+**Usage:** `stat file...`
+
+**Examples:**
+
+```bash
+# Show file stats
+stat file.txt
+
+# Multiple files
+stat file1.txt file2.txt
+```
+
+### file
+
+Determine file type.
+
+**Usage:** `file file...`
+
+**Examples:**
+
+```bash
+# Identify file type
+file document.pdf
+file script.sh
+file image.png
+```
+
+### du
+
+Estimate file space usage.
+
+**Usage:** `du [options] [path...]`
+
+**Options:**
+- `-h` - Human-readable sizes
+- `-s` - Display only total for each argument
+
+**Examples:**
+
+```bash
+# Disk usage of current directory
+du
+
+# Human-readable format
+du -h
+
+# Total size only
+du -sh /home/user/documents
+```
+
+### df
+
+Report filesystem disk space usage.
+
+**Usage:** `df [options]`
+
+**Examples:**
+
+```bash
+# Show filesystem usage
+df
+
+# Human-readable format
+df -h
+```
+
+## Permissions
+
+### chmod
+
+Change file permissions.
+
+**Usage:** `chmod [options] mode file...`
+
+**Options:**
+- `-R` - Change files and directories recursively
+
+**Mode formats:**
+- Octal: `644`, `755`, `777`
+- Symbolic: `u+x`, `g-w`, `o=r`, `a+x`
+
+**Examples:**
+
+```bash
+# Octal mode
+chmod 755 script.sh
+chmod 644 document.txt
+
+# Add execute permission
+chmod +x script.sh
+
+# Remove write for group
+chmod g-w file.txt
+
+# Set exact permissions for user
+chmod u=rwx,g=rx,o=r file.txt
+
+# Recursive
+chmod -R 755 mydir/
+```
+
+### chown
+
+Change file owner and group.
+
+**Usage:** `chown [options] owner[:group] file...`
+
+**Options:**
+- `-R` - Change files and directories recursively
+
+**Examples:**
+
+```bash
+# Change owner
+chown user file.txt
+
+# Change owner and group
+chown user:group file.txt
+
+# Recursive
+chown -R user:group mydir/
+```
+
+## Path Utilities
+
+### basename
+
+Strip directory from filename.
+
+**Usage:** `basename path [suffix]`
+
+**Examples:**
+
+```bash
+# Extract filename
+basename /home/user/file.txt
+# Output: file.txt
+
+# Remove suffix
+basename /home/user/file.txt .txt
+# Output: file
+```
+
+### dirname
+
+Extract directory from path.
+
+**Usage:** `dirname path`
+
+**Examples:**
+
+```bash
+# Extract directory
+dirname /home/user/file.txt
+# Output: /home/user
+
+# Current directory
+dirname file.txt
+# Output: .
+```
+
+### realpath
+
+Print resolved absolute path.
+
+**Usage:** `realpath path...`
+
+**Examples:**
+
+```bash
+# Get absolute path
+realpath ../documents/file.txt
+
+# Resolve symlinks
+realpath link-to-file
+```
+
+## Links
+
+### ln
+
+Create links between files.
+
+**Usage:** `ln [options] target link`
+
+**Options:**
+- `-s` - Create symbolic link
+
+**Examples:**
+
+```bash
+# Create hard link
+ln file.txt hardlink.txt
+
+# Create symbolic link
+ln -s /path/to/file.txt symlink.txt
+
+# Link directory
+ln -s /home/user/docs documents
+```
+
+## Temporary Files
+
+### mktemp
+
+Create temporary file or directory.
+
+**Usage:** `mktemp [options] [template]`
+
+**Options:**
+- `-d` - Create directory instead of file
+
+**Examples:**
+
+```bash
+# Create temp file
+mktemp
+# Output: /tmp/tmp.xyz123
+
+# Create temp directory
+mktemp -d
+# Output: /tmp/tmp.abc456
+
+# Custom template
+mktemp myfile.XXXXXX
+```
+
+## Common Patterns
+
+### Backup files
+
+```bash
+cp important.txt important.txt.bak
+```
+
+### Find and remove
+
+```bash
+find . -name "*.tmp" -type f | xargs rm
+```
+
+### Directory size report
+
+```bash
+du -sh */ | sort -h
+```
+
+### Count files by extension
+
+```bash
+find . -type f | sed 's/.*\.//' | sort | uniq -c
+```

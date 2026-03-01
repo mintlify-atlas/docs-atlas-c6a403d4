@@ -1,0 +1,379 @@
+---
+title: Running Commands
+description: Execute shell commands programmatically with full control over stdin, stdout, and stderr
+---
+
+The `sandbox.commands` API provides programmatic command execution with full shell capabilities. Commands are serialized and executed one at a time, matching real shell behavior.
+
+## Basic Command Execution
+
+<Steps>
+  <Step title="Run a simple command">
+    ```typescript
+    const result = await sandbox.commands.run('echo hello');
+
+    console.log(result.stdout);   // "hello\n"
+    console.log(result.stderr);   // ""
+    console.log(result.exitCode); // 0
+    ```
+  </Step>
+
+  <Step title="Check exit codes">
+    ```typescript
+    // Successful command
+    const success = await sandbox.commands.run('true');
+    console.log(success.exitCode); // 0
+
+    // Failed command
+    const failure = await sandbox.commands.run('false');
+    console.log(failure.exitCode); // 1
+
+    // Command not found
+    const notFound = await sandbox.commands.run('nonexistent_cmd');
+    console.log(notFound.exitCode);  // 127
+    console.log(notFound.stderr);    // "bash: nonexistent_cmd: command not found"
+    ```
+  </Step>
+</Steps>
+
+## Shell State Preservation
+
+The shell maintains state across command invocations:
+
+```typescript
+// Change directory
+await sandbox.commands.run('cd /tmp');
+
+// Directory persists
+const result = await sandbox.commands.run('pwd');
+console.log(result.stdout); // "/tmp\n"
+
+// Set environment variables
+await sandbox.commands.run('export FOO=bar');
+
+// Variable persists
+const envResult = await sandbox.commands.run('echo $FOO');
+console.log(envResult.stdout); // "bar\n"
+```
+
+## Advanced Shell Features
+
+### Command Chaining
+
+```typescript
+// Sequential execution with &&
+const result = await sandbox.commands.run('echo first && echo second');
+console.log(result.stdout);
+// Output:
+// first
+// second
+
+// Execute only on failure with ||
+const fallback = await sandbox.commands.run('false || echo fallback');
+console.log(fallback.stdout); // "fallback\n"
+
+// Unconditional sequence with ;
+const seq = await sandbox.commands.run('echo a ; echo b');
+console.log(seq.stdout);
+// Output:
+// a
+// b
+```
+
+### Pipes
+
+```typescript
+// Pipeline commands
+const result = await sandbox.commands.run('echo hello | cat | grep hello');
+console.log(result.stdout); // "hello\n"
+
+// Multi-stage pipeline
+const pipeline = await sandbox.commands.run(
+  'ls /home/user | grep .txt | wc -l'
+);
+console.log('Text files:', pipeline.stdout.trim());
+```
+
+### Redirects
+
+```typescript
+// Redirect output to file
+await sandbox.commands.run('echo content > /tmp/output.txt');
+
+// Append to file
+await sandbox.commands.run('echo more >> /tmp/output.txt');
+
+// Read from file
+const content = await sandbox.fs.readFile('/tmp/output.txt');
+console.log(content); // "content\nmore\n"
+```
+
+### Variable Expansion
+
+```typescript
+// Environment variables
+const result = await sandbox.commands.run('echo $HOME');
+console.log(result.stdout); // "/home/user\n"
+
+// Default values
+const withDefault = await sandbox.commands.run('echo ${MISSING:-fallback}');
+console.log(withDefault.stdout); // "fallback\n"
+
+// Command substitution
+const subst = await sandbox.commands.run('echo "Current dir: $(pwd)"');
+console.log(subst.stdout); // "Current dir: /home/user\n"
+```
+
+## Streaming Output
+
+Capture output as it's produced with streaming callbacks:
+
+```typescript
+// Stream stdout in real-time
+const stdoutChunks: string[] = [];
+const result = await sandbox.commands.run('echo line1 && echo line2', {
+  onStdout: (data) => {
+    stdoutChunks.push(data);
+    console.log('Received:', data);
+  }
+});
+
+// Full output is also returned
+console.log(result.stdout); // "line1\nline2\n"
+console.log(stdoutChunks.join('')); // Same as result.stdout
+```
+
+### Capture stderr
+
+```typescript
+const stderrChunks: string[] = [];
+const result = await sandbox.commands.run('nonexistent_cmd', {
+  onStderr: (data) => {
+    stderrChunks.push(data);
+    console.error('Error:', data);
+  }
+});
+
+console.log(result.exitCode); // 127
+console.log(result.stderr); // "bash: nonexistent_cmd: command not found\n"
+```
+
+## Providing stdin
+
+Pass input to commands that read from stdin:
+
+```typescript
+// Simple stdin
+const result = await sandbox.commands.run('cat', {
+  stdin: 'Hello from stdin\n'
+});
+console.log(result.stdout); // "Hello from stdin\n"
+
+// Write to file via stdin
+await sandbox.commands.run('cat > /tmp/input.txt', {
+  stdin: 'File content\n'
+});
+
+const content = await sandbox.fs.readFile('/tmp/input.txt');
+console.log(content); // "File content\n"
+```
+
+## Per-Command Options
+
+### Custom Working Directory
+
+```typescript
+// Run command in specific directory (doesn't affect sandbox.cwd)
+const result = await sandbox.commands.run('pwd', {
+  cwd: '/tmp'
+});
+console.log(result.stdout); // "/tmp\n"
+
+// Sandbox cwd is unchanged
+console.log(sandbox.cwd); // "/home/user"
+```
+
+### Custom Environment Variables
+
+```typescript
+// Merge additional env vars for this command only
+const result = await sandbox.commands.run('echo $MY_VAR', {
+  env: { MY_VAR: 'custom-value' }
+});
+console.log(result.stdout); // "custom-value\n"
+
+// Variable doesn't persist
+const next = await sandbox.commands.run('echo $MY_VAR');
+console.log(next.stdout); // "\n" (empty)
+```
+
+### Timeout
+
+```typescript
+// Set command timeout in milliseconds
+try {
+  await sandbox.commands.run('sleep 10', {
+    timeout: 1000 // 1 second
+  });
+} catch (error) {
+  console.log('Command timed out');
+}
+```
+
+### Abort Signal
+
+```typescript
+const controller = new AbortController();
+
+// Start long-running command
+const promise = sandbox.commands.run('sleep 100', {
+  signal: controller.signal
+});
+
+// Cancel it after 1 second
+setTimeout(() => controller.abort(), 1000);
+
+const result = await promise;
+console.log(result.exitCode); // 130 (terminated by signal)
+```
+
+## Concurrent Execution
+
+Commands are automatically serialized (queued) to match real shell behavior:
+
+```typescript
+const order: number[] = [];
+
+const p1 = sandbox.commands.run('echo first').then(() => order.push(1));
+const p2 = sandbox.commands.run('echo second').then(() => order.push(2));
+const p3 = sandbox.commands.run('echo third').then(() => order.push(3));
+
+await Promise.all([p1, p2, p3]);
+
+console.log(order); // [1, 2, 3] - always sequential
+```
+
+## Registering Custom Commands
+
+Extend the shell with custom commands written in JavaScript:
+
+```typescript
+// Register a custom command
+sandbox.commands.register('greet', async (ctx) => {
+  const name = ctx.args[0] || 'world';
+  ctx.stdout.write(`Hello, ${name}!\n`);
+  return 0; // exit code
+});
+
+// Use your custom command
+const result = await sandbox.commands.run('greet Alice');
+console.log(result.stdout);   // "Hello, Alice!\n"
+console.log(result.exitCode); // 0
+```
+
+### Custom Command with Arguments
+
+```typescript
+sandbox.commands.register('add', async (ctx) => {
+  if (ctx.args.length < 2) {
+    ctx.stderr.write('Usage: add <num1> <num2>\n');
+    return 1;
+  }
+
+  const a = parseFloat(ctx.args[0]);
+  const b = parseFloat(ctx.args[1]);
+
+  if (isNaN(a) || isNaN(b)) {
+    ctx.stderr.write('Error: arguments must be numbers\n');
+    return 1;
+  }
+
+  ctx.stdout.write(`${a + b}\n`);
+  return 0;
+});
+
+const result = await sandbox.commands.run('add 10 20');
+console.log(result.stdout); // "30\n"
+```
+
+### Custom Command with VFS Access
+
+```typescript
+sandbox.commands.register('wordcount', async (ctx) => {
+  const filename = ctx.args[0];
+  if (!filename) {
+    ctx.stderr.write('Usage: wordcount <file>\n');
+    return 1;
+  }
+
+  try {
+    const content = ctx.vfs.readFileString(filename);
+    const words = content.split(/\s+/).filter(w => w.length > 0);
+    ctx.stdout.write(`${words.length} words\n`);
+    return 0;
+  } catch (error) {
+    ctx.stderr.write(`Error: ${error.message}\n`);
+    return 1;
+  }
+});
+
+// Create a test file
+await sandbox.fs.writeFile('/tmp/essay.txt', 'The quick brown fox jumps over the lazy dog');
+
+// Run custom command
+const result = await sandbox.commands.run('wordcount /tmp/essay.txt');
+console.log(result.stdout); // "9 words\n"
+```
+
+## Complete Example: Build Script
+
+```typescript
+import { Sandbox } from '@lifo/core';
+
+async function buildProject() {
+  const sandbox = await Sandbox.create({
+    cwd: '/home/user/project'
+  });
+
+  try {
+    // Create project structure
+    await sandbox.fs.writeFiles([
+      { path: 'src/main.js', content: 'console.log("Built!");' },
+      { path: 'src/util.js', content: 'exports.add = (a,b) => a+b;' }
+    ]);
+
+    // Run build steps
+    const steps = [
+      'mkdir -p dist',
+      'cat src/util.js src/main.js > dist/bundle.js',
+      'echo "Build complete"'
+    ];
+
+    for (const cmd of steps) {
+      console.log(`Running: ${cmd}`);
+      const result = await sandbox.commands.run(cmd, {
+        onStdout: (data) => process.stdout.write(data),
+        onStderr: (data) => process.stderr.write(data)
+      });
+
+      if (result.exitCode !== 0) {
+        console.error(`Command failed with exit code ${result.exitCode}`);
+        break;
+      }
+    }
+
+    // Verify output
+    const bundle = await sandbox.fs.readFile('dist/bundle.js');
+    console.log('Bundle size:', bundle.length, 'bytes');
+
+  } finally {
+    sandbox.destroy();
+  }
+}
+
+buildProject().catch(console.error);
+```
+
+## API Reference
+
+See the [SandboxCommands API reference](/api-reference/sandbox-commands) for complete type signatures and details.

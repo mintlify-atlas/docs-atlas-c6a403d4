@@ -1,0 +1,376 @@
+---
+title: Buffer
+description: Binary data manipulation compatible with Node.js Buffer API
+---
+
+## Overview
+
+The `Buffer` class provides a way to work with binary data. It extends `Uint8Array` and is compatible with Node.js Buffer API.
+
+## Constructor
+
+### Buffer.from()
+
+Create a Buffer from various sources.
+
+```typescript
+static from(value: string | Uint8Array | number[] | ArrayBuffer, encoding?: string): Buffer
+```
+
+#### Examples
+
+<CodeGroup>
+```javascript String (UTF-8)
+const buf = Buffer.from('hello world');
+console.log(buf); // <Buffer 68 65 6c 6c 6f 20 77 6f 72 6c 64>
+```
+
+```javascript Base64
+const buf = Buffer.from('SGVsbG8=', 'base64');
+console.log(buf.toString()); // 'Hello'
+```
+
+```javascript Hex
+const buf = Buffer.from('48656c6c6f', 'hex');
+console.log(buf.toString()); // 'Hello'
+```
+
+```javascript Array
+const buf = Buffer.from([72, 101, 108, 108, 111]);
+console.log(buf.toString()); // 'Hello'
+```
+</CodeGroup>
+
+### Buffer.alloc()
+
+Create a zero-filled Buffer.
+
+```typescript
+static alloc(size: number, fill?: number): Buffer
+```
+
+```javascript
+const buf = Buffer.alloc(10);
+console.log(buf); // <Buffer 00 00 00 00 00 00 00 00 00 00>
+
+const filled = Buffer.alloc(5, 0xFF);
+console.log(filled); // <Buffer ff ff ff ff ff>
+```
+
+### Buffer.allocUnsafe()
+
+Create an uninitialized Buffer (faster but may contain old data).
+
+```typescript
+static allocUnsafe(size: number): Buffer
+```
+
+```javascript
+const buf = Buffer.allocUnsafe(10);
+// Contains random data, must be filled before use
+```
+
+## Static Methods
+
+### Buffer.concat()
+
+Concatenate multiple buffers.
+
+```typescript
+static concat(list: (Uint8Array | Buffer)[], totalLength?: number): Buffer
+```
+
+```javascript
+const buf1 = Buffer.from('Hello ');
+const buf2 = Buffer.from('World');
+const result = Buffer.concat([buf1, buf2]);
+console.log(result.toString()); // 'Hello World'
+```
+
+### Buffer.isBuffer()
+
+Check if an object is a Buffer.
+
+```typescript
+static isBuffer(obj: unknown): obj is Buffer
+```
+
+```javascript
+Buffer.isBuffer(Buffer.from('test')); // true
+Buffer.isBuffer('test'); // false
+```
+
+### Buffer.byteLength()
+
+Get the byte length of a string.
+
+```typescript
+static byteLength(str: string, encoding?: string): number
+```
+
+```javascript
+Buffer.byteLength('hello'); // 5
+Buffer.byteLength('SGVsbG8=', 'base64'); // 5
+Buffer.byteLength('48656c6c6f', 'hex'); // 5
+```
+
+## Instance Methods
+
+### toString()
+
+Convert buffer to string.
+
+```typescript
+toString(encoding?: string, start?: number, end?: number): string
+```
+
+<CodeGroup>
+```javascript UTF-8 (default)
+const buf = Buffer.from('hello');
+buf.toString(); // 'hello'
+```
+
+```javascript Base64
+const buf = Buffer.from('hello');
+buf.toString('base64'); // 'aGVsbG8='
+```
+
+```javascript Hex
+const buf = Buffer.from('hello');
+buf.toString('hex'); // '68656c6c6f'
+```
+
+```javascript Slice
+const buf = Buffer.from('hello world');
+buf.toString('utf8', 0, 5); // 'hello'
+```
+</CodeGroup>
+
+### write()
+
+Write string to buffer.
+
+```typescript
+write(str: string, offset?: number, length?: number, encoding?: string): number
+```
+
+```javascript
+const buf = Buffer.alloc(10);
+const written = buf.write('hello', 0, 'utf8');
+console.log(written); // 5
+console.log(buf.toString()); // 'hello\x00\x00\x00\x00\x00'
+```
+
+### toJSON()
+
+Serialize buffer to JSON.
+
+```typescript
+toJSON(): { type: 'Buffer'; data: number[] }
+```
+
+```javascript
+const buf = Buffer.from('test');
+JSON.stringify(buf);
+// '{"type":"Buffer","data":[116,101,115,116]}'
+```
+
+### copy()
+
+Copy buffer data to another buffer.
+
+```typescript
+copy(target: Buffer | Uint8Array, targetStart?: number, sourceStart?: number, sourceEnd?: number): number
+```
+
+```javascript
+const src = Buffer.from('hello');
+const dest = Buffer.alloc(10);
+src.copy(dest, 2);
+console.log(dest.toString()); // '\x00\x00hello\x00\x00\x00'
+```
+
+### equals()
+
+Compare buffers for equality.
+
+```typescript
+equals(other: Uint8Array): boolean
+```
+
+```javascript
+const buf1 = Buffer.from('hello');
+const buf2 = Buffer.from('hello');
+const buf3 = Buffer.from('world');
+
+buf1.equals(buf2); // true
+buf1.equals(buf3); // false
+```
+
+### compare()
+
+Compare buffers (returns -1, 0, or 1).
+
+```typescript
+compare(other: Uint8Array): number
+```
+
+```javascript
+const buf1 = Buffer.from('abc');
+const buf2 = Buffer.from('def');
+
+buf1.compare(buf2); // -1 (buf1 < buf2)
+buf2.compare(buf1); // 1 (buf2 > buf1)
+buf1.compare(buf1); // 0 (equal)
+```
+
+### slice() / subarray()
+
+Extract a section of the buffer.
+
+```typescript
+slice(start?: number, end?: number): Buffer
+subarray(start?: number, end?: number): Buffer
+```
+
+```javascript
+const buf = Buffer.from('hello world');
+const slice = buf.slice(0, 5);
+console.log(slice.toString()); // 'hello'
+```
+
+## Integer Methods
+
+### Reading Integers
+
+<CodeGroup>
+```javascript Big Endian
+buf.readUInt8(offset);
+buf.readUInt16BE(offset);
+buf.readUInt32BE(offset);
+buf.readInt8(offset);
+buf.readInt16BE(offset);
+buf.readInt32BE(offset);
+```
+
+```javascript Little Endian
+buf.readUInt16LE(offset);
+buf.readUInt32LE(offset);
+buf.readInt16LE(offset);
+buf.readInt32LE(offset);
+```
+</CodeGroup>
+
+#### Example
+
+```javascript
+const buf = Buffer.from([0x12, 0x34, 0x56, 0x78]);
+
+buf.readUInt16BE(0); // 0x1234 (4660)
+buf.readUInt16LE(0); // 0x3412 (13330)
+buf.readUInt32BE(0); // 0x12345678
+```
+
+### Writing Integers
+
+<CodeGroup>
+```javascript Big Endian
+buf.writeUInt8(value, offset);
+buf.writeUInt16BE(value, offset);
+buf.writeUInt32BE(value, offset);
+buf.writeInt8(value, offset);
+buf.writeInt16BE(value, offset);
+buf.writeInt32BE(value, offset);
+```
+
+```javascript Little Endian
+buf.writeUInt16LE(value, offset);
+buf.writeUInt32LE(value, offset);
+buf.writeInt16LE(value, offset);
+buf.writeInt32LE(value, offset);
+```
+</CodeGroup>
+
+#### Example
+
+```javascript
+const buf = Buffer.alloc(4);
+buf.writeUInt32BE(0x12345678, 0);
+console.log(buf); // <Buffer 12 34 56 78>
+
+buf.writeUInt32LE(0x12345678, 0);
+console.log(buf); // <Buffer 78 56 34 12>
+```
+
+## Search Methods
+
+### indexOf()
+
+Find first occurrence.
+
+```typescript
+indexOf(value: number | Uint8Array | string, byteOffset?: number, encoding?: string): number
+```
+
+```javascript
+const buf = Buffer.from('hello world');
+buf.indexOf('world'); // 6
+buf.indexOf(0x6f); // 4 (first 'o')
+buf.indexOf('x'); // -1 (not found)
+```
+
+### lastIndexOf()
+
+Find last occurrence.
+
+```typescript
+lastIndexOf(value: number | Uint8Array | string, byteOffset?: number, encoding?: string): number
+```
+
+```javascript
+const buf = Buffer.from('hello world');
+buf.lastIndexOf('o'); // 7
+```
+
+### includes()
+
+Check if buffer contains a value.
+
+```typescript
+includes(value: number | Uint8Array | string, byteOffset?: number, encoding?: string): boolean
+```
+
+```javascript
+const buf = Buffer.from('hello world');
+buf.includes('world'); // true
+buf.includes('xyz'); // false
+```
+
+## Complete Example
+
+```javascript
+import { Buffer } from '@core/node-compat/buffer';
+
+// Create buffer from string
+const buf = Buffer.from('Hello, World!');
+
+// Convert to different encodings
+console.log(buf.toString('base64')); // 'SGVsbG8sIFdvcmxkIQ=='
+console.log(buf.toString('hex')); // '48656c6c6f2c20576f726c6421'
+
+// Search and manipulate
+const worldIndex = buf.indexOf('World');
+console.log(worldIndex); // 7
+
+const worldBuf = buf.slice(worldIndex, worldIndex + 5);
+console.log(worldBuf.toString()); // 'World'
+
+// Write binary data
+const binBuf = Buffer.alloc(4);
+binBuf.writeUInt32BE(0xDEADBEEF, 0);
+console.log(binBuf.toString('hex')); // 'deadbeef'
+```
+
+## Related
+
+- [Node.js Modules](/api/node-modules)

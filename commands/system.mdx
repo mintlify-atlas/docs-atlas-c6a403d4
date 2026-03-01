@@ -1,0 +1,701 @@
+---
+title: System Commands
+description: System information and process management utilities in Lifo
+---
+
+System commands provide information about the running environment, manage processes, and perform system-level operations.
+
+## Process Management
+
+### ps
+
+Report process status.
+
+**Usage:** `ps [options]`
+
+**Examples:**
+
+```bash
+# List all processes
+ps
+```
+
+**Output example:**
+
+```
+$ ps
+  PID TTY          TIME CMD
+    1 tty1     00:00:00 sh
+    2 tty1     00:00:00 node
+    3 tty1     00:00:00 ps
+```
+
+The output shows:
+- Shell (PID 1) - always running
+- Background jobs with their PIDs
+- Current command (ps itself)
+
+### top
+
+Display system processes interactively.
+
+**Usage:** `top`
+
+**Examples:**
+
+```bash
+# Show process monitor
+top
+```
+
+Provides a real-time view of:
+- CPU and memory usage
+- Running processes
+- System uptime
+
+### kill
+
+Terminate processes by PID or job ID.
+
+**Usage:** `kill [signal] pid...`
+
+**Signals:**
+- Default (SIGTERM) - graceful termination
+- `-9` (SIGKILL) - force kill
+- `-STOP` - stop/suspend process
+- `-CONT` - continue stopped process
+
+**Examples:**
+
+```bash
+# Terminate process
+kill 1234
+
+# Force kill
+kill -9 1234
+
+# Kill background job
+kill %1
+
+# Kill multiple processes
+kill 1234 5678 9012
+```
+
+## Environment
+
+### env
+
+Display or set environment variables.
+
+**Usage:** `env [name=value...] [command]`
+
+**Examples:**
+
+```bash
+# Display all variables
+env
+
+# Set variable for command
+env NODE_ENV=production node app.js
+
+# Multiple variables
+env FOO=bar BAZ=qux command
+```
+
+**Output example:**
+
+```
+$ env
+PATH=/usr/local/bin:/usr/bin:/bin
+HOME=/home/user
+USER=user
+SHELL=/bin/sh
+PWD=/home/user
+```
+
+### whoami
+
+Print current user.
+
+**Usage:** `whoami`
+
+**Examples:**
+
+```bash
+$ whoami
+user
+```
+
+### hostname
+
+Show or set system hostname.
+
+**Usage:** `hostname [name]`
+
+**Examples:**
+
+```bash
+# Show hostname
+hostname
+
+# Set hostname
+hostname mycomputer
+```
+
+**Output example:**
+
+```
+$ hostname
+lifo-terminal
+```
+
+## System Information
+
+### uname
+
+Print system information.
+
+**Usage:** `uname [options]`
+
+**Options:**
+- `-a` - All information
+- `-s` - System name
+- `-r` - Kernel release
+- `-m` - Machine architecture
+- `-o` - Operating system
+
+**Examples:**
+
+```bash
+# All info
+uname -a
+
+# System name only
+uname -s
+
+# Kernel version
+uname -r
+
+# Architecture
+uname -m
+```
+
+**Output example:**
+
+```
+$ uname -a
+Linux lifo-terminal 5.15.0 x86_64 GNU/Linux
+```
+
+### uptime
+
+Show system uptime.
+
+**Usage:** `uptime`
+
+**Examples:**
+
+```bash
+$ uptime
+12:30:45 up 5 days, 3:24, 1 user, load average: 0.15, 0.10, 0.08
+```
+
+### free
+
+Display memory usage.
+
+**Usage:** `free [options]`
+
+**Options:**
+- `-h` - Human-readable format
+- `-m` - Show in megabytes
+- `-g` - Show in gigabytes
+
+**Examples:**
+
+```bash
+# Default format
+free
+
+# Human-readable
+free -h
+
+# Megabytes
+free -m
+```
+
+**Output example:**
+
+```
+$ free -h
+              total        used        free      shared  buff/cache   available
+Mem:           15Gi       8.2Gi       4.1Gi       256Mi       2.7Gi       6.5Gi
+Swap:         8.0Gi       0.0Gi       8.0Gi
+```
+
+### fastfetch / neofetch
+
+Display system information in a stylized format.
+
+**Usage:** `fastfetch` or `neofetch`
+
+**Examples:**
+
+```bash
+# Show system info
+fastfetch
+
+# Alternative command
+neofetch
+```
+
+Displays:
+- OS and kernel information
+- CPU and memory specs
+- Shell and terminal info
+- ASCII art logo
+
+## Date and Time
+
+### date
+
+Display or set date and time.
+
+**Usage:** `date [options] [+format]`
+
+**Format specifiers:**
+- `%Y` - Year (4-digit)
+- `%m` - Month (01-12)
+- `%d` - Day (01-31)
+- `%H` - Hour (00-23)
+- `%M` - Minute (00-59)
+- `%S` - Second (00-59)
+- `%A` - Full weekday name
+- `%B` - Full month name
+
+**Examples:**
+
+```bash
+# Current date and time
+date
+
+# Custom format
+date +"%Y-%m-%d"
+date +"%H:%M:%S"
+date +"%A, %B %d, %Y"
+
+# ISO 8601 format
+date +"%Y-%m-%dT%H:%M:%S"
+
+# Unix timestamp
+date +"%s"
+```
+
+**Output examples:**
+
+```
+$ date
+Sun Mar 01 12:30:45 UTC 2026
+
+$ date +"%Y-%m-%d"
+2026-03-01
+
+$ date +"%A, %B %d, %Y"
+Sunday, March 01, 2026
+```
+
+### cal
+
+Display calendar.
+
+**Usage:** `cal [month] [year]`
+
+**Examples:**
+
+```bash
+# Current month
+cal
+
+# Specific month
+cal 3 2026
+
+# Full year
+cal 2026
+```
+
+**Output example:**
+
+```
+$ cal 3 2026
+     March 2026
+Su Mo Tu We Th Fr Sa
+ 1  2  3  4  5  6  7
+ 8  9 10 11 12 13 14
+15 16 17 18 19 20 21
+22 23 24 25 26 27 28
+29 30 31
+```
+
+## Utilities
+
+### sleep
+
+Delay for specified time.
+
+**Usage:** `sleep duration`
+
+**Duration units:**
+- `s` - seconds (default)
+- `m` - minutes
+- `h` - hours
+
+**Examples:**
+
+```bash
+# Sleep 5 seconds
+sleep 5
+
+# Sleep 2 minutes
+sleep 2m
+
+# Sleep 1 hour
+sleep 1h
+
+# Use in script
+echo "Starting..." && sleep 3 && echo "Done"
+```
+
+### watch
+
+Execute command periodically.
+
+**Usage:** `watch [options] command`
+
+**Options:**
+- `-n seconds` - Interval (default: 2)
+
+**Examples:**
+
+```bash
+# Watch command every 2 seconds
+watch date
+
+# Custom interval
+watch -n 5 ls -l
+
+# Monitor file size
+watch -n 1 'du -sh /tmp'
+```
+
+### bc
+
+Calculator for arithmetic operations.
+
+**Usage:** `bc [options]`
+
+**Examples:**
+
+```bash
+# Simple calculation
+echo "2 + 2" | bc
+
+# Multiplication
+echo "6 * 7" | bc
+
+# Division
+echo "scale=2; 10 / 3" | bc
+
+# Power
+echo "2 ^ 8" | bc
+
+# Multiple operations
+echo "(100 + 50) * 2" | bc
+```
+
+**Output examples:**
+
+```
+$ echo "2 + 2" | bc
+4
+
+$ echo "scale=2; 10 / 3" | bc
+3.33
+```
+
+### which
+
+Locate command binary.
+
+**Usage:** `which command...`
+
+**Examples:**
+
+```bash
+# Find command
+which ls
+which node
+which python
+
+# Multiple commands
+which git npm node
+```
+
+**Output example:**
+
+```
+$ which node
+/usr/local/bin/node
+```
+
+## Help and Documentation
+
+### man
+
+Display manual pages.
+
+**Usage:** `man command`
+
+**Examples:**
+
+```bash
+# View manual
+man ls
+man grep
+man tar
+```
+
+### help
+
+Display help information.
+
+**Usage:** `help [command]`
+
+**Examples:**
+
+```bash
+# General help
+help
+
+# Command-specific help
+help cd
+help export
+```
+
+## JavaScript Runtime
+
+### node
+
+Execute JavaScript with Node.js.
+
+**Usage:** `node [options] [script] [args...]`
+
+**Options:**
+- `-e code` - Evaluate JavaScript code
+- `-p code` - Evaluate and print result
+
+**Examples:**
+
+```bash
+# Run script
+node script.js
+
+# Evaluate code
+node -e "console.log('Hello')"
+
+# Print expression
+node -p "2 + 2"
+
+# With arguments
+node app.js --port 3000
+
+# REPL mode
+node
+```
+
+**Output examples:**
+
+```
+$ node -e "console.log('Hello, World!')"
+Hello, World!
+
+$ node -p "Math.PI"
+3.141592653589793
+```
+
+### npm
+
+Node package manager.
+
+**Usage:** `npm [command] [args...]`
+
+**Common commands:**
+- `install` - Install packages
+- `run` - Run package script
+- `test` - Run tests
+- `start` - Start application
+
+**Examples:**
+
+```bash
+# Install dependencies
+npm install
+
+# Install package
+npm install express
+
+# Run script
+npm run build
+npm start
+npm test
+```
+
+## Package Management
+
+### pkg
+
+Package manager for Lifo.
+
+**Usage:** `pkg [command]`
+
+**Examples:**
+
+```bash
+# List installed packages
+pkg list
+
+# Install package
+pkg install package-name
+
+# Update packages
+pkg update
+```
+
+## Cryptography
+
+### sha256sum
+
+Compute SHA-256 hash.
+
+**Usage:** `sha256sum [file...]`
+
+**Examples:**
+
+```bash
+# Hash file
+sha256sum file.txt
+
+# Multiple files
+sha256sum file1.txt file2.txt
+
+# Hash from stdin
+echo "hello" | sha256sum
+```
+
+**Output example:**
+
+```
+$ sha256sum file.txt
+2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae  file.txt
+```
+
+## Fun Commands
+
+### sl
+
+Steam locomotive animation.
+
+**Usage:** `sl`
+
+**Examples:**
+
+```bash
+# Run animation
+sl
+```
+
+Displays an ASCII art train animation. A playful command for when you mistype `ls`.
+
+## Shell Built-ins
+
+### lifo
+
+Lifo system command.
+
+**Usage:** `lifo [options]`
+
+**Examples:**
+
+```bash
+# Show version
+lifo --version
+
+# System information
+lifo info
+```
+
+### logout
+
+Exit the shell.
+
+**Usage:** `logout`
+
+**Examples:**
+
+```bash
+# Exit terminal
+logout
+```
+
+## Common Patterns
+
+### Background jobs
+
+```bash
+# Run in background
+node server.js &
+
+# List jobs
+jobs
+
+# Bring to foreground
+fg %1
+
+# Kill background job
+kill %1
+```
+
+### Process monitoring
+
+```bash
+# Find process
+ps | grep node
+
+# Kill by name
+ps | grep node | awk '{print $1}' | xargs kill
+```
+
+### System diagnostics
+
+```bash
+# Full system info
+uname -a && free -h && uptime
+
+# Memory usage by process
+ps aux | sort -k4 -r | head -10
+```
+
+### Scheduled tasks
+
+```bash
+# Run every 5 seconds
+while true; do
+  date
+  sleep 5
+done
+```
+
+### Time command execution
+
+```bash
+date; npm run build; date
+```

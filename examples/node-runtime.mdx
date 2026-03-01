@@ -1,0 +1,395 @@
+---
+title: Node Runtime
+description: Run JavaScript with the node command and use Node.js built-in modules
+---
+
+## Running JavaScript Files
+
+### Basic Script Execution
+
+```typescript
+const sandbox = await Sandbox.create();
+
+await sandbox.fs.writeFile('/tmp/test.js', 'console.log("hello")');
+
+const result = await sandbox.commands.run('node /tmp/test.js');
+console.log(result.stdout);  // "hello\n"
+console.log(result.exitCode); // 0
+```
+
+### Inline Code Execution
+
+Run JavaScript directly with `-e`:
+
+```typescript
+const result = await sandbox.commands.run('node -e "console.log(1+2)"');
+console.log(result.stdout); // "3\n"
+```
+
+### Check Node Version
+
+```typescript
+const result = await sandbox.commands.run('node -v');
+console.log(result.stdout); // "v18.0.0\n" (or current version)
+```
+
+## Node.js Built-in Modules
+
+The sandbox provides Node.js compatibility APIs:
+
+### fs - File System
+
+```typescript
+const sandbox = await Sandbox.create();
+
+await sandbox.fs.writeFile('/tmp/data.txt', 'file content');
+
+const script = `
+const fs = require('fs');
+const content = fs.readFileSync('/tmp/data.txt', 'utf-8');
+console.log(content);
+`;
+
+await sandbox.fs.writeFile('/tmp/read-file.js', script);
+
+const result = await sandbox.commands.run('node /tmp/read-file.js');
+console.log(result.stdout); // "file content\n"
+```
+
+### path - Path Utilities
+
+```typescript
+const script = `
+const path = require('path');
+console.log(path.join('/foo', 'bar', 'baz'));
+console.log(path.dirname('/foo/bar/file.txt'));
+console.log(path.basename('/foo/bar/file.txt'));
+console.log(path.extname('file.txt'));
+`;
+
+await sandbox.fs.writeFile('/tmp/path-test.js', script);
+
+const result = await sandbox.commands.run('node /tmp/path-test.js');
+console.log(result.stdout);
+// Output:
+// /foo/bar/baz
+// /foo/bar
+// file.txt
+// .txt
+```
+
+### os - Operating System
+
+```typescript
+const script = `
+const os = require('os');
+console.log('Hostname:', os.hostname());
+console.log('Platform:', os.platform());
+console.log('Home:', os.homedir());
+`;
+
+await sandbox.fs.writeFile('/tmp/os-test.js', script);
+
+const result = await sandbox.commands.run('node /tmp/os-test.js');
+console.log(result.stdout);
+// Output:
+// Hostname: lifo
+// Platform: linux
+// Home: /home/user
+```
+
+## Process API
+
+### Command Line Arguments
+
+Access script arguments via `process.argv`:
+
+```typescript
+const script = 'console.log(process.argv.slice(2).join(", "))';
+await sandbox.fs.writeFile('/tmp/args.js', script);
+
+const result = await sandbox.commands.run('node /tmp/args.js arg1 arg2 arg3');
+console.log(result.stdout); // "arg1, arg2, arg3\n"
+```
+
+### Exit Codes
+
+```typescript
+const script = 'process.exit(42)';
+await sandbox.fs.writeFile('/tmp/exit.js', script);
+
+const result = await sandbox.commands.run('node /tmp/exit.js');
+console.log(result.exitCode); // 42
+```
+
+### Environment Variables
+
+```typescript
+const script = `
+console.log('HOME:', process.env.HOME);
+console.log('USER:', process.env.USER);
+console.log('CUSTOM:', process.env.CUSTOM_VAR || 'not set');
+`;
+
+await sandbox.fs.writeFile('/tmp/env.js', script);
+
+const result = await sandbox.commands.run('node /tmp/env.js', {
+  env: { CUSTOM_VAR: 'hello' }
+});
+
+console.log(result.stdout);
+// Output:
+// HOME: /home/user
+// USER: user
+// CUSTOM: hello
+```
+
+### __filename and __dirname
+
+```typescript
+const script = `
+console.log('File:', __filename);
+console.log('Dir:', __dirname);
+`;
+
+await sandbox.fs.writeFile('/tmp/meta.js', script);
+
+const result = await sandbox.commands.run('node /tmp/meta.js');
+console.log(result.stdout);
+// Output:
+// File: /tmp/meta.js
+// Dir: /tmp
+```
+
+## Module System
+
+### Relative Requires
+
+Load local modules:
+
+```typescript
+const sandbox = await Sandbox.create();
+
+// Create a module
+await sandbox.fs.writeFile('/tmp/lib.js', `
+module.exports = {
+  greet: (name) => \`Hello, \${name}!\`,
+  add: (a, b) => a + b
+};
+`);
+
+// Use the module
+const mainScript = `
+const lib = require('./lib');
+console.log(lib.greet('World'));
+console.log('2 + 3 =', lib.add(2, 3));
+`;
+
+await sandbox.fs.writeFile('/tmp/main.js', mainScript);
+
+const result = await sandbox.commands.run('node /tmp/main.js');
+console.log(result.stdout);
+// Output:
+// Hello, World!
+// 2 + 3 = 5
+```
+
+### JSON Modules
+
+Require JSON files directly:
+
+```typescript
+await sandbox.fs.writeFile('/tmp/config.json', JSON.stringify({
+  name: 'my-app',
+  version: '1.0.0',
+  port: 3000
+}));
+
+const script = `
+const config = require('./config.json');
+console.log('App:', config.name);
+console.log('Version:', config.version);
+console.log('Port:', config.port);
+`;
+
+await sandbox.fs.writeFile('/tmp/load-config.js', script);
+
+const result = await sandbox.commands.run('node /tmp/load-config.js');
+console.log(result.stdout);
+// Output:
+// App: my-app
+// Version: 1.0.0
+// Port: 3000
+```
+
+## Error Handling
+
+### Catching Errors
+
+```typescript
+const script = 'throw new Error("Something went wrong")';
+await sandbox.fs.writeFile('/tmp/error.js', script);
+
+const result = await sandbox.commands.run('node /tmp/error.js');
+console.log(result.exitCode);   // 1
+console.log(result.stderr);     // Contains error message and stack trace
+```
+
+### Missing Files
+
+```typescript
+const result = await sandbox.commands.run('node /tmp/nonexistent.js');
+console.log(result.exitCode); // 1
+console.log(result.stderr);   // "ENOENT: no such file or directory"
+```
+
+## HTTP Server (Virtual)
+
+Create virtual HTTP servers for testing:
+
+```typescript
+import { Sandbox } from '@lifo/sandbox';
+
+async function httpServerExample() {
+  const sandbox = await Sandbox.create();
+
+  try {
+    const serverScript = `
+const http = require('http');
+
+const server = http.createServer((req, res) => {
+  res.writeHead(200, { 'Content-Type': 'text/plain' });
+  res.end('Hello from virtual server');
+});
+
+server.listen(5000, () => {
+  console.log('Server listening on port 5000');
+});
+`;
+
+    await sandbox.fs.writeFile('/tmp/server.js', serverScript);
+    
+    // Start server in background
+    sandbox.commands.run('node /tmp/server.js');
+    
+    // Give server time to start
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
+    // Make request using curl
+    const response = await sandbox.commands.run('curl http://localhost:5000/');
+    console.log(response.stdout); // "Hello from virtual server"
+    
+  } finally {
+    sandbox.destroy();
+  }
+}
+
+httpServerExample();
+```
+
+## Complete Example
+
+```typescript
+import { Sandbox } from '@lifo/sandbox';
+
+async function nodeRuntimeExample() {
+  const sandbox = await Sandbox.create();
+
+  try {
+    // Create a utility module
+    await sandbox.fs.writeFile('/tmp/utils.js', `
+const fs = require('fs');
+const path = require('path');
+
+module.exports = {
+  readJSON(filepath) {
+    const content = fs.readFileSync(filepath, 'utf-8');
+    return JSON.parse(content);
+  },
+  
+  writeJSON(filepath, data) {
+    fs.writeFileSync(filepath, JSON.stringify(data, null, 2));
+  },
+  
+  listFiles(dir) {
+    return fs.readdirSync(dir);
+  }
+};
+`);
+
+    // Create sample data
+    await sandbox.fs.writeFile('/tmp/data.json', JSON.stringify({
+      users: [
+        { name: 'Alice', age: 30 },
+        { name: 'Bob', age: 25 }
+      ]
+    }));
+
+    // Create main script
+    const mainScript = `
+const utils = require('./utils');
+
+// Read data
+const data = utils.readJSON('./data.json');
+console.log('Users:', data.users.length);
+
+// Process data
+data.users.forEach(user => {
+  console.log(\`- \${user.name} is \${user.age} years old\`);
+});
+
+// Add new user
+data.users.push({ name: 'Charlie', age: 35 });
+
+// Save updated data
+utils.writeJSON('./output.json', data);
+console.log('\nSaved to output.json');
+
+// List files
+const files = utils.listFiles('.');
+console.log('\nFiles in current directory:');
+files.forEach(f => console.log('  -', f));
+`;
+
+    await sandbox.fs.writeFile('/tmp/main.js', mainScript);
+
+    // Run the script
+    const result = await sandbox.commands.run('node /tmp/main.js');
+    console.log(result.stdout);
+    
+    // Verify output file was created
+    const output = await sandbox.fs.readFile('/tmp/output.json');
+    console.log('\nOutput file contents:');
+    console.log(output);
+    
+  } finally {
+    sandbox.destroy();
+  }
+}
+
+nodeRuntimeExample();
+```
+
+**Expected Output:**
+```
+Users: 2
+- Alice is 30 years old
+- Bob is 25 years old
+
+Saved to output.json
+
+Files in current directory:
+  - data.json
+  - main.js
+  - output.json
+  - utils.js
+
+Output file contents:
+{
+  "users": [
+    { "name": "Alice", "age": 30 },
+    { "name": "Bob", "age": 25 },
+    { "name": "Charlie", "age": 35 }
+  ]
+}
+```

@@ -1,0 +1,340 @@
+---
+title: Persistence
+description: Enable automatic filesystem persistence to IndexedDB for stateful applications
+---
+
+Lifo supports automatic persistence of the virtual filesystem to IndexedDB in browser environments. When enabled, filesystem changes are automatically saved and restored across page reloads.
+
+## Enabling Persistence
+
+Persistence is enabled via the `persist` option when creating a sandbox:
+
+```typescript
+import { Sandbox } from '@lifo/core';
+
+const sandbox = await Sandbox.create({
+  persist: true  // Enable IndexedDB persistence
+});
+```
+
+<Warning>
+  Persistence is **disabled by default**. You must explicitly set `persist: true` to enable it.
+</Warning>
+
+## How It Works
+
+<Steps>
+  <Step title="Boot sequence">
+    When `persist: true` is set:
+    
+    1. The persistence backend opens the IndexedDB database
+    2. The kernel attempts to load a previously saved filesystem tree
+    3. If found, the saved state is deserialized and loaded into the VFS
+    4. If not found, a fresh filesystem is initialized
+  </Step>
+
+  <Step title="Runtime behavior">
+    During sandbox operation:
+    
+    - Filesystem changes trigger watch events in the VFS
+    - Changes are debounced (1000ms default) to batch writes
+    - The entire VFS tree is serialized and saved to IndexedDB
+    - Virtual directories (`/proc`, `/dev`) are excluded from persistence
+  </Step>
+
+  <Step title="Restoration">
+    On subsequent page loads:
+    
+    - The saved filesystem tree is automatically loaded from IndexedDB
+    - Your files, directories, and permissions are restored
+    - Virtual providers are re-registered for `/proc` and `/dev`
+  </Step>
+</Steps>
+
+## Serialization Details
+
+The persistence system serializes the VFS tree to a compact binary format:
+
+```typescript
+// Internal serialization (you don't call this directly)
+const serialized = serialize(vfs.getRoot());
+// Returns: SerializedNode with compressed structure
+
+// Restoration
+const restored = deserialize(serialized);
+vfs.loadFromSerialized(restored);
+```
+
+### What Gets Persisted
+
+✅ **Included:**
+- All files and their contents (text and binary)
+- Directory structure
+- File permissions (mode)
+- Timestamps (ctime, mtime)
+
+❌ **Excluded:**
+- `/proc` directory (virtual, regenerated at boot)
+- `/dev` directory (virtual, regenerated at boot)
+- Running processes and shell state
+- Port registry and virtual network handlers
+
+## Testing Persistence
+
+Here's how to test that persistence works:
+
+```typescript
+import { Sandbox } from '@lifo/core';
+
+// First session: create and save data
+async function sessionOne() {
+  const sandbox = await Sandbox.create({ persist: true });
+
+  // Create some files
+  await sandbox.fs.writeFile('/home/user/note.txt', 'Remember this!');
+  await sandbox.fs.mkdir('/home/user/projects');
+  await sandbox.fs.writeFile('/home/user/projects/app.js', 'console.log("hello");');
+
+  console.log('Files created. Refresh the page to test persistence.');
+  
+  // Changes are auto-saved (debounced)
+  // Wait a bit to ensure save completes
+  await new Promise(resolve => setTimeout(resolve, 1500));
+}
+
+// Second session: verify data persisted
+async function sessionTwo() {
+  const sandbox = await Sandbox.create({ persist: true });
+
+  // Check if files exist
+  const noteExists = await sandbox.fs.exists('/home/user/note.txt');
+  console.log('note.txt exists:', noteExists); // true
+
+  // Read content
+  const note = await sandbox.fs.readFile('/home/user/note.txt');
+  console.log('Content:', note); // "Remember this!"
+
+  // Verify directory structure
+  const entries = await sandbox.fs.readdir('/home/user');
+  console.log('Files:', entries.map(e => e.name)); // ["note.txt", "projects", ...]
+}
+
+// Call sessionOne first, then refresh and call sessionTwo
+```
+
+## Persistence Backend
+
+By default, Lifo uses `IndexedDBPersistenceBackend` for browser environments:
+
+```typescript
+import { IndexedDBPersistenceBackend } from '@lifo/core';
+
+// This is used internally by default
+const backend = new IndexedDBPersistenceBackend();
+await backend.open();
+
+// Load saved tree
+const data = await backend.loadTree();
+
+// Save tree
+await backend.saveTree(serialized);
+```
+
+### Custom Backend
+
+You can implement a custom persistence backend by implementing the `PersistenceBackend` interface:
+
+```typescript
+import { Kernel, PersistenceBackend } from '@lifo/core';
+import type { SerializedNode } from '@lifo/core';
+
+class LocalStorageBackend implements PersistenceBackend {
+  private key = 'lifo-vfs-tree';
+
+  async open(): Promise<void> {
+    // No-op for localStorage
+  }
+
+  async loadTree(): Promise<SerializedNode | null> {
+    const data = localStorage.getItem(this.key);
+    return data ? JSON.parse(data) : null;
+  }
+
+  async saveTree(tree: SerializedNode): Promise<void> {
+    localStorage.setItem(this.key, JSON.stringify(tree));
+  }
+}
+
+// Use custom backend
+const kernel = new Kernel(new LocalStorageBackend());
+await kernel.boot({ persist: true });
+```
+
+## Debouncing and Performance
+
+Filesystem changes are debounced to avoid excessive writes:
+
+```typescript
+// Internal implementation (from PersistenceManager.ts)
+const DEBOUNCE_MS = 1000; // 1 second
+
+// Each filesystem change schedules a save
+vfs.watch(() => {
+  persistence.scheduleSave(vfs.getRoot());
+});
+
+// scheduleSave debounces writes
+scheduleSave(root: INode): void {
+  if (this.timer) {
+    clearTimeout(this.timer);
+  }
+  this.timer = setTimeout(() => {
+    this.save(root).catch(() => {});
+    this.timer = null;
+  }, DEBOUNCE_MS);
+}
+```
+
+This means:
+- Rapid file changes trigger only one save after 1 second of inactivity
+- Performance remains good even with many file operations
+- Changes are saved automatically without manual intervention
+
+## Snapshots vs Persistence
+
+Lifo offers two ways to save filesystem state:
+
+### Persistence (Automatic)
+
+```typescript
+const sandbox = await Sandbox.create({ persist: true });
+// Changes are auto-saved to IndexedDB
+// Restored automatically on next load
+```
+
+**Use when:**
+- You want automatic, transparent state management
+- Building a browser-based IDE or terminal
+- Users expect their work to persist across sessions
+
+### Snapshots (Manual)
+
+```typescript
+// Export entire VFS as tar.gz
+const snapshot = await sandbox.fs.exportSnapshot();
+
+// Save to file, send to server, etc.
+const blob = new Blob([snapshot], { type: 'application/gzip' });
+
+// Later: restore from snapshot
+const sandbox2 = await Sandbox.create();
+await sandbox2.fs.importSnapshot(snapshot);
+```
+
+**Use when:**
+- You need portable, explicit save/load functionality
+- Implementing save/load buttons in your UI
+- Sharing filesystem state between users or devices
+- Creating checkpoints or versioned snapshots
+
+## Complete Example
+
+Here's a complete example demonstrating persistence in a browser application:
+
+```typescript
+import { Sandbox } from '@lifo/core';
+
+class PersistentTerminal {
+  private sandbox: Sandbox | null = null;
+
+  async init() {
+    // Create sandbox with persistence
+    this.sandbox = await Sandbox.create({
+      persist: true,
+      cwd: '/home/user'
+    });
+
+    // Check if this is first run
+    const welcomeExists = await this.sandbox.fs.exists('/home/user/.welcome');
+    if (!welcomeExists) {
+      // First run: create welcome file
+      await this.sandbox.fs.writeFile(
+        '/home/user/.welcome',
+        'Welcome to Lifo! This file persists across reloads.\n'
+      );
+      await this.sandbox.commands.run('cat .welcome');
+    } else {
+      console.log('Welcome back! Your files are restored.');
+    }
+
+    // Run some commands
+    await this.executeCommand('ls -la');
+  }
+
+  async executeCommand(cmd: string) {
+    if (!this.sandbox) return;
+
+    const result = await this.sandbox.commands.run(cmd, {
+      onStdout: (data) => console.log(data),
+      onStderr: (data) => console.error(data)
+    });
+
+    return result;
+  }
+
+  async saveAndExit() {
+    // Ensure final save completes
+    if (this.sandbox) {
+      // Wait for debounce to complete
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      this.sandbox.destroy();
+    }
+  }
+}
+
+// Usage
+const terminal = new PersistentTerminal();
+await terminal.init();
+
+// User creates files
+await terminal.executeCommand('echo "my data" > data.txt');
+await terminal.executeCommand('mkdir projects');
+
+// On page unload, ensure save completes
+window.addEventListener('beforeunload', () => {
+  terminal.saveAndExit();
+});
+```
+
+## Troubleshooting
+
+### Data not persisting
+
+1. Verify `persist: true` is set
+2. Ensure browser supports IndexedDB
+3. Check browser storage quota isn't exceeded
+4. Wait for debounce period (1 second) after changes
+
+### Storage quota
+
+```typescript
+// Check IndexedDB quota (browser API)
+if ('storage' in navigator && 'estimate' in navigator.storage) {
+  const estimate = await navigator.storage.estimate();
+  console.log('Used:', estimate.usage, 'bytes');
+  console.log('Quota:', estimate.quota, 'bytes');
+  console.log('Percentage:', (estimate.usage / estimate.quota * 100).toFixed(2) + '%');
+}
+```
+
+### Clear persisted data
+
+```typescript
+// In browser console or application code
+indexedDB.deleteDatabase('lifo-vfs');
+location.reload();
+```
+
+## API Reference
+
+See the [Kernel API reference](/api-reference/kernel) for details on the persistence system internals.

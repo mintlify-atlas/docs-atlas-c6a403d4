@@ -1,0 +1,219 @@
+---
+title: Basic Usage
+description: Get started with Lifo Sandbox - create sandboxes and run commands
+---
+
+## Creating a Sandbox
+
+The simplest way to create a sandbox:
+
+```typescript
+import { Sandbox } from '@lifo/sandbox';
+
+const sandbox = await Sandbox.create();
+
+// Always clean up when done
+sandbox.destroy();
+```
+
+## Running Commands
+
+Run shell commands and capture their output:
+
+```typescript
+const sandbox = await Sandbox.create();
+
+const result = await sandbox.commands.run('echo hello');
+console.log(result.stdout);  // "hello\n"
+console.log(result.exitCode); // 0
+```
+
+**Expected Output:**
+```
+hello
+```
+
+## Handling Exit Codes
+
+Capture exit codes from failed commands:
+
+```typescript
+const result = await sandbox.commands.run('false');
+console.log(result.exitCode); // 1
+```
+
+## Error Handling
+
+Non-existent commands return exit code 127:
+
+```typescript
+const result = await sandbox.commands.run('nonexistent_cmd');
+console.log(result.exitCode);        // 127
+console.log(result.stderr);          // "command not found: nonexistent_cmd"
+```
+
+## Customizing the Sandbox
+
+### Set Working Directory
+
+```typescript
+const sandbox = await Sandbox.create({ cwd: '/tmp' });
+console.log(sandbox.cwd); // "/tmp"
+
+// Or change it later
+sandbox.cwd = '/home/user';
+```
+
+### Set Environment Variables
+
+```typescript
+const sandbox = await Sandbox.create({ 
+  env: { 
+    EDITOR: 'vim',
+    DEBUG: 'true'
+  } 
+});
+
+console.log(sandbox.env.EDITOR); // "vim"
+console.log(sandbox.env.HOME);   // "/home/user" (default env preserved)
+```
+
+### Pre-populate Files
+
+Create files before running commands:
+
+```typescript
+const sandbox = await Sandbox.create({
+  files: { 
+    '/home/user/test.txt': 'hello world',
+    '/home/user/deep/nested/file.txt': 'nested content'
+  },
+});
+
+const content = await sandbox.fs.readFile('/home/user/test.txt');
+console.log(content); // "hello world"
+```
+
+## Stateful Execution
+
+The sandbox preserves shell state between commands:
+
+### Persistent Working Directory
+
+```typescript
+const sandbox = await Sandbox.create();
+
+await sandbox.commands.run('cd /tmp');
+const result = await sandbox.commands.run('pwd');
+
+console.log(result.stdout); // "/tmp\n"
+```
+
+### Persistent Environment Variables
+
+```typescript
+const sandbox = await Sandbox.create();
+
+await sandbox.commands.run('export FOO=bar');
+const result = await sandbox.commands.run('echo $FOO');
+
+console.log(result.stdout); // "bar\n"
+```
+
+## Command Chaining
+
+### Using &&
+
+Run multiple commands, stopping on failure:
+
+```typescript
+const result = await sandbox.commands.run('echo first && echo second');
+console.log(result.stdout);
+// "first\nsecond\n"
+```
+
+### Using ||
+
+Run fallback command on failure:
+
+```typescript
+const result = await sandbox.commands.run('false || echo fallback');
+console.log(result.stdout); // "fallback\n"
+```
+
+### Using ;
+
+Run commands unconditionally:
+
+```typescript
+const result = await sandbox.commands.run('echo first ; echo second');
+console.log(result.stdout);
+// "first\nsecond\n"
+```
+
+## Streaming Output
+
+Capture output as it's produced:
+
+```typescript
+const chunks: string[] = [];
+
+const result = await sandbox.commands.run('echo hello', {
+  onStdout: (data) => chunks.push(data),
+  onStderr: (data) => console.error(data)
+});
+
+console.log(chunks.join('')); // "hello\n"
+```
+
+## Custom Commands
+
+Register your own commands:
+
+```typescript
+const sandbox = await Sandbox.create();
+
+sandbox.commands.register('greet', async (ctx) => {
+  const name = ctx.args[0] ?? 'world';
+  ctx.stdout.write(`Hello, ${name}!\n`);
+  return 0;
+});
+
+const result = await sandbox.commands.run('greet Alice');
+console.log(result.stdout); // "Hello, Alice!\n"
+```
+
+## Complete Example
+
+```typescript
+import { Sandbox } from '@lifo/sandbox';
+
+async function main() {
+  // Create sandbox with custom config
+  const sandbox = await Sandbox.create({
+    cwd: '/tmp',
+    env: { DEBUG: 'true' },
+    files: {
+      '/tmp/data.txt': 'sample data'
+    }
+  });
+
+  try {
+    // Run commands
+    await sandbox.commands.run('export APP_NAME=myapp');
+    
+    const result = await sandbox.commands.run('cat data.txt');
+    console.log('File contents:', result.stdout);
+    
+    // Check exit code
+    if (result.exitCode === 0) {
+      console.log('Command succeeded!');
+    }
+  } finally {
+    // Always clean up
+    sandbox.destroy();
+  }
+}
+
+main();
+```

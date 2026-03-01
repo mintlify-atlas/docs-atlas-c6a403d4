@@ -1,0 +1,730 @@
+---
+title: 'Sandbox'
+description: 'Main entry point for creating isolated browser-based OS environments'
+---
+
+## Overview
+
+The `Sandbox` class is the main entry point for creating a fully-functional Linux-like operating system in the browser. It orchestrates the kernel, virtual filesystem, shell, and command registry into a unified environment.
+
+## Creating a Sandbox
+
+```typescript
+import { Sandbox } from '@lifo/core';
+
+const sandbox = await Sandbox.create({
+  persist: false,
+  cwd: '/home/user',
+  files: {
+    '/home/user/hello.txt': 'Hello, World!'
+  }
+});
+```
+
+## Static Methods
+
+### create()
+
+Create a new Sandbox instance. Orchestrates all boot steps: Kernel, VFS, Registry, Shell, and config sourcing.
+
+```typescript
+static async create(options?: SandboxOptions): Promise<Sandbox>
+```
+
+<ParamField path="options" type="SandboxOptions" optional>
+  Configuration options for the sandbox
+  
+  <Expandable title="properties">
+    <ParamField path="persist" type="boolean" default="false">
+      Enable IndexedDB persistence to preserve filesystem across page reloads
+    </ParamField>
+    
+    <ParamField path="env" type="Record<string, string>" optional>
+      Extra environment variables (merged with defaults: HOME, USER, PATH, etc.)
+    </ParamField>
+    
+    <ParamField path="cwd" type="string" default="/home/user">
+      Initial working directory
+    </ParamField>
+    
+    <ParamField path="files" type="Record<string, string | Uint8Array>" optional>
+      Pre-populate files: path → content mapping
+    </ParamField>
+    
+    <ParamField path="terminal" type="ITerminal" optional>
+      Attach a pre-created ITerminal for visual mode. If omitted, runs in headless mode.
+    </ParamField>
+    
+    <ParamField path="mounts" type="MountConfig[]" optional>
+      Mount native filesystem directories (Node.js only)
+      
+      <Expandable title="MountConfig properties">
+        <ParamField path="virtualPath" type="string" required>
+          Path inside the virtual filesystem (e.g., "/mnt/project")
+        </ParamField>
+        
+        <ParamField path="hostPath" type="string" required>
+          Host filesystem path to mount
+        </ParamField>
+        
+        <ParamField path="readOnly" type="boolean" default="false">
+          If true, the mount is read-only
+        </ParamField>
+        
+        <ParamField path="fsModule" type="NativeFsModule" optional>
+          Custom fs module. If omitted, node:fs is used.
+        </ParamField>
+      </Expandable>
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ResponseField name="sandbox" type="Sandbox">
+  A fully initialized Sandbox instance
+</ResponseField>
+
+**Example:**
+
+```typescript
+const sandbox = await Sandbox.create({
+  persist: true,
+  cwd: '/home/user/projects',
+  env: {
+    NODE_ENV: 'development'
+  },
+  files: {
+    '/home/user/package.json': JSON.stringify({ name: 'my-app' }),
+    '/home/user/README.md': '# My Project'
+  }
+});
+```
+
+## Instance Properties
+
+### commands
+
+Programmatic command execution interface.
+
+```typescript
+readonly commands: SandboxCommands
+```
+
+**Example:**
+
+```typescript
+const result = await sandbox.commands.run('ls -la /home/user');
+console.log(result.stdout);
+```
+
+See [SandboxCommands API](#sandboxcommands-interface) for available methods.
+
+### fs
+
+Filesystem operations interface.
+
+```typescript
+readonly fs: SandboxFs
+```
+
+**Example:**
+
+```typescript
+await sandbox.fs.writeFile('/home/user/data.json', '{"key": "value"}');
+const content = await sandbox.fs.readFile('/home/user/data.json');
+```
+
+See [SandboxFs API](#sandboxfs-interface) for available methods.
+
+### env
+
+Environment variables.
+
+```typescript
+readonly env: Record<string, string>
+```
+
+**Example:**
+
+```typescript
+console.log(sandbox.env.HOME); // '/home/user'
+console.log(sandbox.env.PATH); // '/usr/bin:/bin'
+```
+
+### kernel
+
+Direct access to the underlying Kernel instance (power-user escape hatch).
+
+```typescript
+readonly kernel: Kernel
+```
+
+See [Kernel](/api/kernel) for details.
+
+### shell
+
+Direct access to the underlying Shell instance (power-user escape hatch).
+
+```typescript
+readonly shell: Shell
+```
+
+See [Shell](/api/shell) for details.
+
+### cwd
+
+Current working directory. Can be read and written.
+
+```typescript
+get cwd(): string
+set cwd(path: string)
+```
+
+**Example:**
+
+```typescript
+console.log(sandbox.cwd); // '/home/user'
+sandbox.cwd = '/tmp';
+console.log(sandbox.cwd); // '/tmp'
+```
+
+## Instance Methods
+
+### mountNative()
+
+Mount a native filesystem directory into the virtual filesystem. Only works in Node.js environments.
+
+```typescript
+mountNative(
+  virtualPath: string,
+  hostPath: string,
+  options?: { readOnly?: boolean; fsModule?: NativeFsModule }
+): void
+```
+
+<ParamField path="virtualPath" type="string" required>
+  Path inside the virtual filesystem where the mount will appear (e.g., "/mnt/project")
+</ParamField>
+
+<ParamField path="hostPath" type="string" required>
+  Host filesystem path to mount (e.g., "/home/user/my-project")
+</ParamField>
+
+<ParamField path="options" type="object" optional>
+  <Expandable title="properties">
+    <ParamField path="readOnly" type="boolean" default="false">
+      If true, the mount is read-only
+    </ParamField>
+    
+    <ParamField path="fsModule" type="NativeFsModule" optional>
+      Custom fs module implementing NativeFsModule. If omitted, node:fs is used.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+**Example:**
+
+```typescript
+// Node.js only
+import fs from 'node:fs';
+
+sandbox.mountNative('/mnt/project', '/home/user/my-project', {
+  readOnly: false,
+  fsModule: fs
+});
+
+// Now VFS operations on /mnt/project/* delegate to the real filesystem
+await sandbox.fs.writeFile('/mnt/project/output.txt', 'data');
+```
+
+### unmountNative()
+
+Unmount a previously mounted filesystem.
+
+```typescript
+unmountNative(virtualPath: string): void
+```
+
+<ParamField path="virtualPath" type="string" required>
+  The virtual path that was passed to mountNative()
+</ParamField>
+
+**Example:**
+
+```typescript
+sandbox.unmountNative('/mnt/project');
+```
+
+### attach()
+
+Attach a headless sandbox to a terminal, enabling visual mode.
+
+```typescript
+attach(terminal: ITerminal): void
+```
+
+<ParamField path="terminal" type="ITerminal" required>
+  Terminal instance to attach to
+</ParamField>
+
+**Example:**
+
+```typescript
+import { Terminal } from '@xterm/xterm';
+
+const terminal = new Terminal();
+terminal.open(document.getElementById('terminal'));
+sandbox.attach(terminal);
+```
+
+### detach()
+
+Detach from visual mode.
+
+```typescript
+detach(): void
+```
+
+### exportSnapshot()
+
+Export the entire VFS as a tar.gz snapshot.
+
+```typescript
+async exportSnapshot(): Promise<Uint8Array>
+```
+
+<ResponseField name="snapshot" type="Uint8Array">
+  Compressed tar.gz archive of the entire filesystem
+</ResponseField>
+
+**Example:**
+
+```typescript
+const snapshot = await sandbox.exportSnapshot();
+
+// Save to file (Node.js)
+import fs from 'node:fs';
+fs.writeFileSync('snapshot.tar.gz', snapshot);
+
+// Download in browser
+const blob = new Blob([snapshot], { type: 'application/gzip' });
+const url = URL.createObjectURL(blob);
+const a = document.createElement('a');
+a.href = url;
+a.download = 'sandbox-snapshot.tar.gz';
+a.click();
+```
+
+### importSnapshot()
+
+Restore VFS from a tar.gz snapshot.
+
+```typescript
+async importSnapshot(data: Uint8Array): Promise<void>
+```
+
+<ParamField path="data" type="Uint8Array" required>
+  Compressed tar.gz archive to restore from
+</ParamField>
+
+**Example:**
+
+```typescript
+// Load from file (Node.js)
+import fs from 'node:fs';
+const snapshot = fs.readFileSync('snapshot.tar.gz');
+await sandbox.importSnapshot(snapshot);
+
+// Upload in browser
+const file = await fileInput.files[0].arrayBuffer();
+await sandbox.importSnapshot(new Uint8Array(file));
+```
+
+### destroy()
+
+Destroy the sandbox, releasing all resources.
+
+```typescript
+destroy(): void
+```
+
+**Example:**
+
+```typescript
+sandbox.destroy();
+// Sandbox is now unusable
+```
+
+## SandboxCommands Interface
+
+The `commands` property provides programmatic command execution.
+
+### run()
+
+Execute a shell command and capture output.
+
+```typescript
+run(cmd: string, options?: RunOptions): Promise<CommandResult>
+```
+
+<ParamField path="cmd" type="string" required>
+  Shell command to execute
+</ParamField>
+
+<ParamField path="options" type="RunOptions" optional>
+  <Expandable title="properties">
+    <ParamField path="cwd" type="string" optional>
+      Working directory for this command
+    </ParamField>
+    
+    <ParamField path="env" type="Record<string, string>" optional>
+      Extra environment variables for this command
+    </ParamField>
+    
+    <ParamField path="signal" type="AbortSignal" optional>
+      Abort signal to cancel the command
+    </ParamField>
+    
+    <ParamField path="timeout" type="number" optional>
+      Timeout in milliseconds
+    </ParamField>
+    
+    <ParamField path="onStdout" type="(data: string) => void" optional>
+      Streaming stdout callback
+    </ParamField>
+    
+    <ParamField path="onStderr" type="(data: string) => void" optional>
+      Streaming stderr callback
+    </ParamField>
+    
+    <ParamField path="stdin" type="string" optional>
+      Provide stdin content
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ResponseField name="result" type="CommandResult">
+  <Expandable title="properties">
+    <ResponseField name="stdout" type="string">
+      Captured stdout
+    </ResponseField>
+    
+    <ResponseField name="stderr" type="string">
+      Captured stderr
+    </ResponseField>
+    
+    <ResponseField name="exitCode" type="number">
+      Command exit code (0 = success)
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+**Example:**
+
+```typescript
+const result = await sandbox.commands.run('ls -la /home/user');
+console.log(result.stdout);
+console.log('Exit code:', result.exitCode);
+
+// With streaming
+await sandbox.commands.run('npm install', {
+  cwd: '/home/user/project',
+  onStdout: (data) => console.log('OUT:', data),
+  onStderr: (data) => console.error('ERR:', data)
+});
+
+// With stdin
+const result = await sandbox.commands.run('cat', {
+  stdin: 'Hello, World!'
+});
+```
+
+### register()
+
+Register a custom command.
+
+```typescript
+register(name: string, handler: Command): void
+```
+
+See [CommandRegistry](/api/command-registry) for details.
+
+## SandboxFs Interface
+
+The `fs` property provides promise-based filesystem operations.
+
+### readFile()
+
+Read file contents.
+
+```typescript
+readFile(path: string): Promise<string>
+readFile(path: string, encoding: null): Promise<Uint8Array>
+```
+
+<ParamField path="path" type="string" required>
+  File path to read
+</ParamField>
+
+<ParamField path="encoding" type="null" optional>
+  If null, returns binary data
+</ParamField>
+
+<ResponseField name="content" type="string | Uint8Array">
+  File contents (string by default, Uint8Array if encoding is null)
+</ResponseField>
+
+**Example:**
+
+```typescript
+const text = await sandbox.fs.readFile('/home/user/data.txt');
+const binary = await sandbox.fs.readFile('/home/user/image.png', null);
+```
+
+### writeFile()
+
+Write file contents.
+
+```typescript
+writeFile(path: string, content: string | Uint8Array): Promise<void>
+```
+
+<ParamField path="path" type="string" required>
+  File path to write
+</ParamField>
+
+<ParamField path="content" type="string | Uint8Array" required>
+  File content to write
+</ParamField>
+
+**Example:**
+
+```typescript
+await sandbox.fs.writeFile('/home/user/output.txt', 'Hello, World!');
+await sandbox.fs.writeFile('/home/user/data.bin', new Uint8Array([1, 2, 3]));
+```
+
+### readdir()
+
+List directory contents.
+
+```typescript
+readdir(path: string): Promise<Array<{ name: string; type: 'file' | 'directory' }>>
+```
+
+<ParamField path="path" type="string" required>
+  Directory path to list
+</ParamField>
+
+<ResponseField name="entries" type="Dirent[]">
+  Array of directory entries
+</ResponseField>
+
+**Example:**
+
+```typescript
+const entries = await sandbox.fs.readdir('/home/user');
+for (const entry of entries) {
+  console.log(entry.name, entry.type);
+}
+```
+
+### stat()
+
+Get file or directory metadata.
+
+```typescript
+stat(path: string): Promise<{ type: 'file' | 'directory'; size: number; mtime: number }>
+```
+
+<ParamField path="path" type="string" required>
+  Path to stat
+</ParamField>
+
+<ResponseField name="stat" type="Stat">
+  File metadata
+</ResponseField>
+
+**Example:**
+
+```typescript
+const stat = await sandbox.fs.stat('/home/user/data.txt');
+console.log('Size:', stat.size, 'bytes');
+console.log('Modified:', new Date(stat.mtime));
+```
+
+### mkdir()
+
+Create a directory.
+
+```typescript
+mkdir(path: string, options?: { recursive?: boolean }): Promise<void>
+```
+
+<ParamField path="path" type="string" required>
+  Directory path to create
+</ParamField>
+
+<ParamField path="options" type="object" optional>
+  <Expandable title="properties">
+    <ParamField path="recursive" type="boolean" default="false">
+      Create parent directories if they don't exist
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+**Example:**
+
+```typescript
+await sandbox.fs.mkdir('/home/user/projects/my-app', { recursive: true });
+```
+
+### rm()
+
+Remove a file or directory.
+
+```typescript
+rm(path: string, options?: { recursive?: boolean }): Promise<void>
+```
+
+<ParamField path="path" type="string" required>
+  Path to remove
+</ParamField>
+
+<ParamField path="options" type="object" optional>
+  <Expandable title="properties">
+    <ParamField path="recursive" type="boolean" default="false">
+      Remove directories and their contents recursively
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+**Example:**
+
+```typescript
+await sandbox.fs.rm('/home/user/temp.txt');
+await sandbox.fs.rm('/home/user/old-project', { recursive: true });
+```
+
+### exists()
+
+Check if a path exists.
+
+```typescript
+exists(path: string): Promise<boolean>
+```
+
+<ParamField path="path" type="string" required>
+  Path to check
+</ParamField>
+
+<ResponseField name="exists" type="boolean">
+  True if the path exists
+</ResponseField>
+
+**Example:**
+
+```typescript
+if (await sandbox.fs.exists('/home/user/config.json')) {
+  // Load config
+}
+```
+
+### rename()
+
+Rename or move a file or directory.
+
+```typescript
+rename(oldPath: string, newPath: string): Promise<void>
+```
+
+<ParamField path="oldPath" type="string" required>
+  Current path
+</ParamField>
+
+<ParamField path="newPath" type="string" required>
+  New path
+</ParamField>
+
+**Example:**
+
+```typescript
+await sandbox.fs.rename('/home/user/old.txt', '/home/user/new.txt');
+```
+
+### cp()
+
+Copy a file.
+
+```typescript
+cp(src: string, dest: string): Promise<void>
+```
+
+<ParamField path="src" type="string" required>
+  Source file path
+</ParamField>
+
+<ParamField path="dest" type="string" required>
+  Destination file path
+</ParamField>
+
+**Example:**
+
+```typescript
+await sandbox.fs.cp('/home/user/original.txt', '/home/user/copy.txt');
+```
+
+### writeFiles()
+
+Write multiple files atomically.
+
+```typescript
+writeFiles(files: Array<{ path: string; content: string | Uint8Array }>): Promise<void>
+```
+
+<ParamField path="files" type="FileEntry[]" required>
+  Array of files to write
+</ParamField>
+
+**Example:**
+
+```typescript
+await sandbox.fs.writeFiles([
+  { path: '/home/user/index.html', content: '<h1>Hello</h1>' },
+  { path: '/home/user/style.css', content: 'body { margin: 0; }' },
+  { path: '/home/user/script.js', content: 'console.log("Hi");' }
+]);
+```
+
+## Type Definitions
+
+```typescript
+interface SandboxOptions {
+  persist?: boolean;
+  env?: Record<string, string>;
+  cwd?: string;
+  files?: Record<string, string | Uint8Array>;
+  terminal?: ITerminal;
+  mounts?: Array<{
+    virtualPath: string;
+    hostPath: string;
+    readOnly?: boolean;
+    fsModule?: NativeFsModule;
+  }>;
+}
+
+interface RunOptions {
+  cwd?: string;
+  env?: Record<string, string>;
+  signal?: AbortSignal;
+  timeout?: number;
+  onStdout?: (data: string) => void;
+  onStderr?: (data: string) => void;
+  stdin?: string;
+}
+
+interface CommandResult {
+  stdout: string;
+  stderr: string;
+  exitCode: number;
+}
+```

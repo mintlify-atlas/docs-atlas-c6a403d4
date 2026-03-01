@@ -1,0 +1,273 @@
+---
+title: "BlobStore"
+description: "Content-addressable storage for binary data with FNV-1a hashing"
+---
+
+## Overview
+
+The BlobStore API provides content-addressable storage using FNV-1a 64-bit hashing. It supports both in-memory and IndexedDB-backed implementations for storing arbitrary binary data.
+
+## BlobStore Interface
+
+Defines the contract for content-addressable blob storage.
+
+```typescript
+interface BlobStore {
+  get(hash: string): Promise<Uint8Array | null>;
+  put(data: Uint8Array): Promise<string>;
+  delete(hash: string): Promise<void>;
+  has(hash: string): Promise<boolean>;
+}
+```
+
+### Methods
+
+#### get
+
+Retrieves a blob by its content hash.
+
+```typescript
+async get(hash: string): Promise<Uint8Array | null>
+```
+
+<ParamField path="hash" type="string" required>
+  The 16-character lowercase hex hash of the content
+</ParamField>
+
+<ResponseField name="return" type="Uint8Array | null">
+  The blob data, or `null` if not found
+</ResponseField>
+
+#### put
+
+Stores a blob and returns its content hash.
+
+```typescript
+async put(data: Uint8Array): Promise<string>
+```
+
+<ParamField path="data" type="Uint8Array" required>
+  The binary data to store
+</ParamField>
+
+<ResponseField name="return" type="string">
+  The 16-character lowercase hex hash of the content
+</ResponseField>
+
+<Note>
+  Duplicate content is automatically deduplicated by hash
+</Note>
+
+#### delete
+
+Removes a blob from storage.
+
+```typescript
+async delete(hash: string): Promise<void>
+```
+
+<ParamField path="hash" type="string" required>
+  The content hash to delete
+</ParamField>
+
+#### has
+
+Checks if a blob exists in storage.
+
+```typescript
+async has(hash: string): Promise<boolean>
+```
+
+<ParamField path="hash" type="string" required>
+  The content hash to check
+</ParamField>
+
+<ResponseField name="return" type="boolean">
+  `true` if the blob exists, `false` otherwise
+</ResponseField>
+
+---
+
+## MemoryBlobStore
+
+In-memory implementation using a Map.
+
+### Constructor
+
+```typescript
+new MemoryBlobStore()
+```
+
+### Example
+
+```typescript
+const store = new MemoryBlobStore();
+
+// Store data
+const encoder = new TextEncoder();
+const data = encoder.encode('Hello, world!');
+const hash = await store.put(data);
+console.log('Stored with hash:', hash); // e.g., "d58042e4e4ab7705"
+
+// Retrieve data
+const retrieved = await store.get(hash);
+const decoder = new TextDecoder();
+console.log(decoder.decode(retrieved)); // "Hello, world!"
+
+// Check existence
+const exists = await store.has(hash);
+console.log(exists); // true
+
+// Delete
+await store.delete(hash);
+console.log(await store.has(hash)); // false
+```
+
+<Info>
+  Data is copied on get/put to prevent callers from mutating internal state. See `BlobStore.ts:94-95`
+</Info>
+
+---
+
+## IndexedDBBlobStore
+
+Persistent browser storage using IndexedDB.
+
+### Constructor
+
+```typescript
+new IndexedDBBlobStore()
+```
+
+### Configuration
+
+- **Database name:** `lifo-blobs` (see `BlobStore.ts:120`)
+- **Object store:** `blobs` (see `BlobStore.ts:121`)
+
+### Methods
+
+#### open
+
+Opens or creates the IndexedDB database. Must be called before other methods.
+
+```typescript
+async open(): Promise<void>
+```
+
+<Warning>
+  Always call `open()` before using other methods, or operations will fail silently
+</Warning>
+
+### Example
+
+```typescript
+const store = new IndexedDBBlobStore();
+await store.open();
+
+// Store data
+const encoder = new TextEncoder();
+const data = encoder.encode('Persistent data');
+const hash = await store.put(data);
+
+// Data persists across page reloads
+location.reload();
+
+// After reload:
+const store2 = new IndexedDBBlobStore();
+await store2.open();
+const retrieved = await store2.get(hash);
+console.log(new TextDecoder().decode(retrieved)); // "Persistent data"
+```
+
+<Note>
+  Gracefully degrades if IndexedDB is unavailable (e.g., in private browsing mode)
+</Note>
+
+---
+
+## Hash Function
+
+The `hashBytes` function computes a 64-bit FNV-1a hash.
+
+```typescript
+function hashBytes(data: Uint8Array): string
+```
+
+<ParamField path="data" type="Uint8Array" required>
+  The bytes to hash
+</ParamField>
+
+<ResponseField name="return" type="string">
+  A 16-character lowercase hexadecimal string representing the 64-bit hash
+</ResponseField>
+
+### Example
+
+```typescript
+import { hashBytes } from './BlobStore.js';
+
+const data = new TextEncoder().encode('test');
+const hash = hashBytes(data);
+console.log(hash); // "f9e6e6ef197c2b25"
+```
+
+### Algorithm Details
+
+- **Algorithm:** FNV-1a (Fowler-Noll-Vo)
+- **Output size:** 64 bits
+- **Offset basis:** `0xcbf29ce484222325`
+- **Prime:** `0x00000100000001b3`
+
+<Info>
+  The implementation uses 32-bit arithmetic for compatibility and splits the 64-bit state into high and low words. See `BlobStore.ts:8-71`
+</Info>
+
+---
+
+## Storage Comparison
+
+| Feature | MemoryBlobStore | IndexedDBBlobStore |
+|---------|----------------|--------------------|
+| Persistence | No | Yes (browser storage) |
+| Performance | Fastest | Fast (async I/O) |
+| Capacity | Limited by RAM | ~50MB-unlimited* |
+| Use case | Testing, temporary | Production |
+
+<sub>*Capacity depends on browser quota policies</sub>
+
+---
+
+## Integration with VFS
+
+BlobStore is used by the virtual filesystem for:
+
+1. **Large file storage:** Files that exceed chunking thresholds
+2. **Content deduplication:** Identical content stored once
+3. **Lazy loading:** Content loaded on-demand from IndexedDB
+
+**Example integration:**
+
+```typescript
+const blobStore = new IndexedDBBlobStore();
+await blobStore.open();
+
+// VFS writes large file
+const fileData = new Uint8Array(10 * 1024 * 1024); // 10 MB
+const hash = await blobStore.put(fileData);
+
+// Store hash in INode
+const fileNode: INode = {
+  type: 'file',
+  name: 'large-file.bin',
+  blobRef: hash,  // Reference to blob store
+  data: new Uint8Array(0),  // No inline data
+  // ... other fields
+};
+
+// Later, retrieve content
+const content = await blobStore.get(fileNode.blobRef!);
+```
+
+<Tip>
+  Use `ContentStore` for synchronous in-memory caching of chunked content. See [ContentStore documentation](/api/content-store).
+</Tip>

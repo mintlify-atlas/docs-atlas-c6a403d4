@@ -1,0 +1,398 @@
+---
+title: Package System
+description: Install and manage NPM packages and custom Lifo commands
+---
+
+Lifo includes a built-in package manager for installing NPM packages and extending the shell with custom commands. The system supports both standard NPM packages and special "lifo-pkg" packages that provide shell commands.
+
+## Using NPM
+
+Lifo provides an `npm` command that works like standard NPM:
+
+```bash
+# Install a package globally
+npm install -g prettier
+
+# Install from a specific registry
+NPM_REGISTRY=https://registry.npmjs.org npm install -g lodash
+
+# List installed packages
+npm list -g
+```
+
+Packages are installed to `/usr/lib/node_modules/` and can be imported in Node.js scripts:
+
+```javascript
+// In a Node script inside Lifo:
+const prettier = require('prettier');
+const formatted = prettier.format('const x=1', { parser: 'babel' });
+console.log(formatted);
+```
+
+## The Lifo Package Manager
+
+The `lifo` command manages Lifo-specific packages that provide shell commands:
+
+```bash
+lifo --help
+```
+
+Output:
+```
+Usage: lifo <command> [args]
+
+Commands:
+  install|add <name>     install lifo-pkg-<name> from npm
+  remove <name>          remove a lifo package
+  list                   list lifo packages & dev links
+  search <term>          search npm for lifo-pkg-* packages
+  init <name>            scaffold a new lifo package
+  link [path]            dev-link a local package
+  unlink <name>          remove a dev link
+
+Environment:
+  LIFO_CDN               CDN for ESM imports (default: https://esm.sh)
+```
+
+## Installing Lifo Packages
+
+Lifo packages are NPM packages prefixed with `lifo-pkg-` that provide shell commands:
+
+```bash
+# Install a lifo package (prefix is auto-added)
+lifo install ffmpeg
+
+# This installs 'lifo-pkg-ffmpeg' and registers the 'ffmpeg' command
+ffmpeg --version
+```
+
+After installation:
+- The package is downloaded from NPM to `/usr/lib/node_modules/`
+- Commands defined in the package manifest are registered
+- You can use the command immediately
+
+### List Installed Packages
+
+```bash
+lifo list
+```
+
+Output:
+```
+Installed:
+  lifo-pkg-ffmpeg@1.0.0  [ffmpeg]
+  lifo-pkg-imagemagick@2.1.0  [convert, identify]
+
+Dev-linked:
+  my-tool  /home/user/dev/my-tool  [mytool]
+```
+
+### Remove Packages
+
+```bash
+lifo remove ffmpeg
+```
+
+This:
+- Unregisters all commands from the package
+- Removes the package directory from `/usr/lib/node_modules/`
+
+## Creating Lifo Packages
+
+<Steps>
+  <Step title="Initialize a package">
+    ```bash
+    lifo init my-tool
+    ```
+
+    This creates a package structure:
+    ```
+    lifo-pkg-my-tool/
+    ├── package.json
+    ├── commands/
+    │   └── my-tool.js
+    └── README.md
+    ```
+  </Step>
+
+  <Step title="Edit the command">
+    Open `commands/my-tool.js` and implement your command:
+
+    ```javascript
+    /**
+     * my-tool -- lifo command
+     */
+    module.exports = async function(ctx, lifo) {
+      const args = ctx.args;
+
+      if (args.includes('--help') || args.includes('-h')) {
+        ctx.stdout.write('Usage: my-tool [options]\n');
+        ctx.stdout.write('\nA custom Lifo command.\n');
+        return 0;
+      }
+
+      // Your command logic here
+      ctx.stdout.write('Hello from my-tool!\n');
+      
+      // Access filesystem
+      const files = ctx.vfs.readdir(ctx.cwd);
+      ctx.stdout.write(`Found ${files.length} files\n`);
+
+      return 0; // exit code
+    };
+    ```
+
+    The command receives two arguments:
+    - `ctx` - CommandContext with args, env, cwd, vfs, stdout, stderr, signal, stdin
+    - `lifo` - LifoAPI with import(), loadWasm(), resolve(), cdn helpers
+  </Step>
+
+  <Step title="Test locally with dev link">
+    ```bash
+    lifo link ./lifo-pkg-my-tool
+    my-tool --help
+    ```
+
+    Dev linking registers the command without installing from NPM.
+  </Step>
+
+  <Step title="Publish to NPM">
+    For a full TypeScript package with proper tooling:
+
+    ```bash
+    # On your host machine (not in Lifo)
+    npm create lifo-pkg my-tool
+    cd lifo-pkg-my-tool
+    npm install
+    npm run build
+    npm publish
+    ```
+
+    Then users can install it:
+    ```bash
+    lifo install my-tool
+    ```
+  </Step>
+</Steps>
+
+## Package Manifest
+
+Lifo packages use a special `lifo` field in `package.json`:
+
+```json
+{
+  "name": "lifo-pkg-my-tool",
+  "version": "1.0.0",
+  "description": "My custom tool for Lifo",
+  "lifo": {
+    "commands": {
+      "mytool": "./commands/my-tool.js",
+      "mt": "./commands/my-tool.js"
+    }
+  },
+  "keywords": ["lifo-pkg", "tool"],
+  "license": "MIT"
+}
+```
+
+The `lifo.commands` object maps command names to JavaScript entry points. You can register multiple commands or aliases.
+
+## Dev Linking for Development
+
+During development, use `lifo link` to test packages without publishing:
+
+```bash
+# Link current directory
+cd /home/user/my-package
+lifo link
+
+# Or link a specific path
+lifo link ../other-package
+```
+
+Dev-linked packages:
+- Are registered in `/home/user/.lifo-links.json`
+- Commands are loaded from the source directory
+- Changes take effect immediately (no reinstall needed)
+- Persist across sessions if persistence is enabled
+
+### Unlinking
+
+```bash
+lifo unlink my-package
+```
+
+## Advanced: Using the Lifo API
+
+Commands receive a `lifo` object with helper methods:
+
+### Import ESM Modules from CDN
+
+```javascript
+module.exports = async function(ctx, lifo) {
+  // Import from CDN (default: esm.sh)
+  const { default: chalk } = await lifo.import('chalk');
+  
+  ctx.stdout.write(chalk.blue('Hello in blue!\n'));
+  return 0;
+};
+```
+
+### Load WebAssembly
+
+```javascript
+module.exports = async function(ctx, lifo) {
+  // Load WASM module
+  const wasmModule = await lifo.loadWasm('https://example.com/module.wasm');
+  const instance = await WebAssembly.instantiate(wasmModule);
+  
+  // Call WASM functions
+  const result = instance.exports.add(10, 20);
+  ctx.stdout.write(`Result: ${result}\n`);
+  return 0;
+};
+```
+
+### Resolve Paths
+
+```javascript
+module.exports = async function(ctx, lifo) {
+  // Resolve path relative to package directory
+  const dataPath = lifo.resolve('data/config.json');
+  
+  // Read file from package
+  const config = ctx.vfs.readFileString(dataPath);
+  ctx.stdout.write(`Config: ${config}\n`);
+  return 0;
+};
+```
+
+## Complete Example: Image Processor
+
+Here's a complete example of a lifo package that processes images:
+
+```javascript
+// commands/imgproc.js
+module.exports = async function(ctx, lifo) {
+  const [inputPath, outputPath] = ctx.args;
+  
+  if (!inputPath || !outputPath) {
+    ctx.stderr.write('Usage: imgproc <input> <output>\n');
+    return 1;
+  }
+
+  try {
+    // Import image processing library from CDN
+    const { default: sharp } = await lifo.import('sharp-wasm');
+    
+    // Read input file
+    const inputData = ctx.vfs.readFile(lifo.resolve(inputPath));
+    
+    // Process image (resize to 800x600)
+    const processed = await sharp(inputData)
+      .resize(800, 600)
+      .toBuffer();
+    
+    // Write output file
+    ctx.vfs.writeFile(lifo.resolve(outputPath), processed);
+    
+    ctx.stdout.write(`Processed ${inputPath} -> ${outputPath}\n`);
+    return 0;
+  } catch (error) {
+    ctx.stderr.write(`Error: ${error.message}\n`);
+    return 1;
+  }
+};
+```
+
+```json
+// package.json
+{
+  "name": "lifo-pkg-imgproc",
+  "version": "1.0.0",
+  "description": "Image processing for Lifo",
+  "lifo": {
+    "commands": {
+      "imgproc": "./commands/imgproc.js"
+    }
+  },
+  "keywords": ["lifo-pkg", "image"],
+  "license": "MIT"
+}
+```
+
+Usage:
+```bash
+lifo install imgproc
+imgproc photo.jpg thumbnail.jpg
+```
+
+## Using Packages from TypeScript
+
+You can also register and use packages programmatically:
+
+```typescript
+import { Sandbox } from '@lifo/core';
+
+const sandbox = await Sandbox.create();
+
+// Register a custom command
+sandbox.commands.register('greet', async (ctx) => {
+  const name = ctx.args[0] || 'world';
+  ctx.stdout.write(`Hello, ${name}!\n`);
+  return 0;
+});
+
+// Use the command
+const result = await sandbox.commands.run('greet Alice');
+console.log(result.stdout); // "Hello, Alice!\n"
+```
+
+See the [Running Commands guide](/guides/running-commands#registering-custom-commands) for more details.
+
+## Searching for Packages
+
+```bash
+lifo search ffmpeg
+```
+
+This searches the NPM registry for packages prefixed with `lifo-pkg-` and displays results:
+
+```
+NAME                          VERSION     DESCRIPTION
+----------------------------------------------------------------------
+ffmpeg                        1.0.0       FFmpeg media processing
+ffmpeg-filters                0.2.1       FFmpeg filter utilities
+```
+
+## Environment Variables
+
+### NPM_REGISTRY
+
+Change the NPM registry:
+
+```bash
+export NPM_REGISTRY=https://registry.npmjs.org
+npm install -g package-name
+```
+
+### LIFO_CDN
+
+Change the ESM CDN for `lifo.import()`:
+
+```bash
+export LIFO_CDN=https://cdn.skypack.dev
+```
+
+## Source Code Reference
+
+Package system implementation:
+- Command: [lifo.ts:1-488](/api-reference/commands/lifo)
+- Runtime: [lifo-runtime.ts](/api-reference/pkg/lifo-runtime)
+- Dev links: [lifo-dev.ts](/api-reference/pkg/lifo-dev)
+
+## API Reference
+
+For complete API details, see:
+- [CommandContext API](/api-reference/command-context)
+- [LifoAPI](/api-reference/lifo-api)

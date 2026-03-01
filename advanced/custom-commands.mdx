@@ -1,0 +1,330 @@
+---
+title: Custom Commands
+description: Learn how to create custom commands using the CommandRegistry API
+---
+
+Lifo's command system is fully extensible. You can register new commands at runtime using the `CommandRegistry` API, allowing you to build custom tools that integrate seamlessly with the shell.
+
+## Command Interface
+
+All commands in Lifo implement the `Command` type, which is a function that receives a `CommandContext` and returns a promise that resolves to an exit code.
+
+```typescript
+// src/commands/types.ts:24
+type Command = (ctx: CommandContext) => Promise<number>;
+```
+
+### CommandContext
+
+The context object provides everything your command needs to interact with the system:
+
+```typescript
+// src/commands/types.ts:12-22
+interface CommandContext {
+  args: string[];                    // Command-line arguments
+  env: Record<string, string>;       // Environment variables
+  cwd: string;                       // Current working directory
+  vfs: VFS;                          // Virtual filesystem instance
+  stdout: CommandOutputStream;       // Standard output stream
+  stderr: CommandOutputStream;       // Standard error stream
+  signal: AbortSignal;               // Abort signal for cancellation
+  stdin?: CommandInputStream;        // Standard input (if piped)
+  setRawMode?: (enabled: boolean) => void;  // Terminal raw mode control
+}
+```
+
+### Stream Interfaces
+
+```typescript
+// src/commands/types.ts:3-10
+interface CommandOutputStream {
+  write(text: string): void;
+}
+
+interface CommandInputStream {
+  read(): Promise<string | null>;   // null = EOF
+  readAll(): Promise<string>;
+}
+```
+
+## Creating a Simple Command
+
+<Steps>
+
+<Step title="Define the command function">
+
+Create a command that greets the user:
+
+```typescript
+import type { Command } from '@lifo/core/commands/types';
+
+const greet: Command = async (ctx) => {
+  const name = ctx.args[0] || 'World';
+  ctx.stdout.write(`Hello, ${name}!\n`);
+  return 0;  // Success
+};
+```
+
+</Step>
+
+<Step title="Register the command">
+
+Use the `CommandRegistry.register()` method to make your command available:
+
+```typescript
+// src/commands/registry.ts:7-9
+registry.register('greet', greet);
+```
+
+Now you can run `greet Alice` in the shell.
+
+</Step>
+
+</Steps>
+
+## Working with the Filesystem
+
+Commands can read and write files through the VFS:
+
+```typescript
+import type { Command } from '@lifo/core/commands/types';
+import { resolve } from '@lifo/core/utils/path';
+import { VFSError } from '@lifo/core/kernel/vfs';
+
+const countLines: Command = async (ctx) => {
+  if (ctx.args.length === 0) {
+    ctx.stderr.write('Usage: count-lines <file>\n');
+    return 1;
+  }
+
+  const path = resolve(ctx.cwd, ctx.args[0]);
+  
+  try {
+    const content = ctx.vfs.readFileString(path);
+    const lines = content.split('\n').length;
+    ctx.stdout.write(`${lines} lines\n`);
+    return 0;
+  } catch (e) {
+    if (e instanceof VFSError) {
+      ctx.stderr.write(`count-lines: ${e.message}\n`);
+      return 1;
+    }
+    throw e;
+  }
+};
+```
+
+## Handling Standard Input
+
+Commands can read from stdin to support pipes:
+
+```typescript
+// Based on src/commands/fs/cat.ts:6-15
+const reverse: Command = async (ctx) => {
+  let input: string;
+
+  // Read from stdin if available
+  if (ctx.stdin && ctx.args.length === 0) {
+    input = await ctx.stdin.readAll();
+  } else if (ctx.args.length > 0) {
+    const path = resolve(ctx.cwd, ctx.args[0]);
+    input = ctx.vfs.readFileString(path);
+  } else {
+    ctx.stderr.write('Usage: reverse [file]\n');
+    return 1;
+  }
+
+  const reversed = input.split('').reverse().join('');
+  ctx.stdout.write(reversed);
+  return 0;
+};
+```
+
+This command works with both files and pipes:
+
+```bash
+reverse file.txt         # Read from file
+echo "hello" | reverse   # Read from stdin
+```
+
+## Environment Variables
+
+Access environment variables through the context:
+
+```typescript
+const showConfig: Command = async (ctx) => {
+  const editor = ctx.env.EDITOR || 'nano';
+  const home = ctx.env.HOME || '/';
+  
+  ctx.stdout.write(`Editor: ${editor}\n`);
+  ctx.stdout.write(`Home: ${home}\n`);
+  return 0;
+};
+```
+
+## Lazy Loading Commands
+
+For better performance, register commands with lazy loading:
+
+```typescript
+// src/commands/registry.ts:11-13
+registry.registerLazy('my-command', () => import('./commands/my-command.js'));
+```
+
+The command module should export a default `Command`:
+
+```typescript
+// commands/my-command.ts
+import type { Command } from '@lifo/core/commands/types';
+
+const command: Command = async (ctx) => {
+  ctx.stdout.write('Heavy command loaded!\n');
+  return 0;
+};
+
+export default command;
+```
+
+## Complete Example: JSON Formatter
+
+Here's a complete command that formats JSON files:
+
+```typescript
+import type { Command } from '@lifo/core/commands/types';
+import { resolve } from '@lifo/core/utils/path';
+import { VFSError } from '@lifo/core/kernel/vfs';
+
+const jsonFormat: Command = async (ctx) => {
+  // Parse options
+  let indent = 2;
+  let files: string[] = [];
+  
+  for (let i = 0; i < ctx.args.length; i++) {
+    const arg = ctx.args[i];
+    if (arg === '-i' || arg === '--indent') {
+      indent = parseInt(ctx.args[++i], 10);
+      if (isNaN(indent)) {
+        ctx.stderr.write('json-format: invalid indent\n');
+        return 1;
+      }
+    } else {
+      files.push(arg);
+    }
+  }
+
+  // Read from stdin if no files specified
+  if (files.length === 0) {
+    if (!ctx.stdin) {
+      ctx.stderr.write('Usage: json-format [-i indent] <file>\n');
+      return 1;
+    }
+    
+    const input = await ctx.stdin.readAll();
+    try {
+      const obj = JSON.parse(input);
+      const formatted = JSON.stringify(obj, null, indent);
+      ctx.stdout.write(formatted + '\n');
+      return 0;
+    } catch (e) {
+      ctx.stderr.write(`json-format: parse error: ${e.message}\n`);
+      return 1;
+    }
+  }
+
+  // Process files
+  let exitCode = 0;
+  for (const file of files) {
+    const path = resolve(ctx.cwd, file);
+    try {
+      const content = ctx.vfs.readFileString(path);
+      const obj = JSON.parse(content);
+      const formatted = JSON.stringify(obj, null, indent);
+      
+      ctx.vfs.writeFile(path, formatted + '\n');
+      ctx.stdout.write(`Formatted ${file}\n`);
+    } catch (e) {
+      if (e instanceof VFSError) {
+        ctx.stderr.write(`json-format: ${file}: ${e.message}\n`);
+      } else if (e instanceof SyntaxError) {
+        ctx.stderr.write(`json-format: ${file}: invalid JSON\n`);
+      } else {
+        ctx.stderr.write(`json-format: ${file}: ${e.message}\n`);
+      }
+      exitCode = 1;
+    }
+  }
+
+  return exitCode;
+};
+
+export default command;
+```
+
+Register it:
+
+```typescript
+registry.register('json-format', jsonFormat);
+```
+
+Use it:
+
+```bash
+json-format data.json                    # Format file in-place
+cat data.json | json-format              # Format from stdin
+json-format -i 4 *.json                  # Format with 4-space indent
+```
+
+## Handling Cancellation
+
+Use the `signal` for long-running operations:
+
+```typescript
+const slowCommand: Command = async (ctx) => {
+  for (let i = 0; i < 100; i++) {
+    // Check if cancelled (Ctrl+C)
+    if (ctx.signal.aborted) {
+      ctx.stderr.write('\nCancelled\n');
+      return 130;  // Standard exit code for SIGINT
+    }
+    
+    ctx.stdout.write(`Processing ${i}...\n`);
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  
+  return 0;
+};
+```
+
+## Best Practices
+
+1. **Exit codes**: Return `0` for success, non-zero for errors (typically `1`)
+2. **Error handling**: Catch `VFSError` for filesystem operations
+3. **Path resolution**: Always use `resolve(ctx.cwd, path)` for relative paths
+4. **Output**: Write to `stdout` for data, `stderr` for errors and diagnostics
+5. **Newlines**: Include `\n` at the end of output lines
+6. **Stdin support**: Check for `ctx.stdin` to enable piping
+7. **Cancellation**: Check `ctx.signal.aborted` in long operations
+8. **Help text**: Show usage information when called incorrectly
+
+## Registry API Reference
+
+```typescript
+class CommandRegistry {
+  // Register a command immediately
+  register(name: string, command: Command): void;
+  
+  // Register a command with lazy loading
+  registerLazy(name: string, loader: () => Promise<{ default: Command }>): void;
+  
+  // Unregister a command
+  unregister(name: string): void;
+  
+  // Resolve a command (loads lazy commands)
+  resolve(name: string): Promise<Command | undefined>;
+  
+  // List all registered command names
+  list(): string[];
+}
+```
+
+See the [VFS API](/api/vfs) for filesystem operations and [Package System](/advanced/creating-packages) for distributing commands as packages.

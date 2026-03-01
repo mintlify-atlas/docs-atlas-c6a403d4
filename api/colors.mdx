@@ -1,0 +1,314 @@
+---
+title: ANSI Colors
+description: Terminal color and text formatting utilities
+---
+
+## Overview
+
+ANSI color utilities provide terminal text formatting using escape codes. These are useful for creating colored output in CLI applications.
+
+## Constants
+
+### Text Styles
+
+```typescript
+export const RESET: string;
+export const BOLD: string;
+export const DIM: string;
+export const ITALIC: string;
+export const UNDERLINE: string;
+```
+
+### Standard Colors
+
+```typescript
+export const RED: string;
+export const GREEN: string;
+export const YELLOW: string;
+export const BLUE: string;
+export const MAGENTA: string;
+export const CYAN: string;
+export const WHITE: string;
+```
+
+### Bright Colors
+
+```typescript
+export const BRIGHT_RED: string;
+export const BRIGHT_GREEN: string;
+export const BRIGHT_YELLOW: string;
+export const BRIGHT_BLUE: string;
+export const BRIGHT_MAGENTA: string;
+export const BRIGHT_CYAN: string;
+```
+
+## Helper Functions
+
+### red()
+
+Format text in red.
+
+```typescript
+function red(s: string): string
+```
+
+```javascript
+import { red } from '@core/utils/colors';
+
+console.log(red('Error: Something went wrong'));
+```
+
+### green()
+
+Format text in green.
+
+```typescript
+function green(s: string): string
+```
+
+```javascript
+import { green } from '@core/utils/colors';
+
+console.log(green('Success: Operation completed'));
+```
+
+### yellow()
+
+Format text in yellow.
+
+```typescript
+function yellow(s: string): string
+```
+
+```javascript
+import { yellow } from '@core/utils/colors';
+
+console.log(yellow('Warning: Check your input'));
+```
+
+### blue()
+
+Format text in blue.
+
+```typescript
+function blue(s: string): string
+```
+
+```javascript
+import { blue } from '@core/utils/colors';
+
+console.log(blue('Info: Processing...'));
+```
+
+### magenta()
+
+Format text in magenta.
+
+```typescript
+function magenta(s: string): string
+```
+
+```javascript
+import { magenta } from '@core/utils/colors';
+
+console.log(magenta('Debug: Variable value'));
+```
+
+### cyan()
+
+Format text in cyan.
+
+```typescript
+function cyan(s: string): string
+```
+
+```javascript
+import { cyan } from '@core/utils/colors';
+
+console.log(cyan('Highlight: Important detail'));
+```
+
+### bold()
+
+Format text in bold.
+
+```typescript
+function bold(s: string): string
+```
+
+```javascript
+import { bold } from '@core/utils/colors';
+
+console.log(bold('Important message'));
+```
+
+### dim()
+
+Format text as dimmed.
+
+```typescript
+function dim(s: string): string
+```
+
+```javascript
+import { dim } from '@core/utils/colors';
+
+console.log(dim('Secondary information'));
+```
+
+## Usage Examples
+
+### Basic Coloring
+
+```javascript
+import { red, green, yellow, blue } from '@core/utils/colors';
+
+console.log(red('Error: File not found'));
+console.log(green('Success: File saved'));
+console.log(yellow('Warning: Deprecated API'));
+console.log(blue('Info: Loading...'));
+```
+
+### Status Messages
+
+```javascript
+import { green, red, yellow } from '@core/utils/colors';
+
+function logStatus(level, message) {
+  switch (level) {
+    case 'success':
+      console.log(green(`✓ ${message}`));
+      break;
+    case 'error':
+      console.log(red(`✗ ${message}`));
+      break;
+    case 'warning':
+      console.log(yellow(`⚠ ${message}`));
+      break;
+  }
+}
+
+logStatus('success', 'Build completed');
+logStatus('error', 'Build failed');
+logStatus('warning', 'Linting issues found');
+```
+
+### Using Raw Constants
+
+```javascript
+import { RED, GREEN, BOLD, RESET } from '@core/utils/colors';
+
+// Manual formatting
+console.log(`${RED}Error:${RESET} Something went wrong`);
+console.log(`${BOLD}${GREEN}Success!${RESET}`);
+
+// Combine styles
+const errorMsg = `${BOLD}${RED}CRITICAL ERROR${RESET}`;
+console.log(errorMsg);
+```
+
+### Formatting Tables
+
+```javascript
+import { bold, cyan, dim } from '@core/utils/colors';
+
+function printTable(data) {
+  console.log(bold('Name          Status      Time'));
+  console.log(dim('─'.repeat(40)));
+  
+  data.forEach(row => {
+    const status = row.ok ? '✓' : '✗';
+    const color = row.ok ? 'green' : 'red';
+    console.log(
+      `${cyan(row.name.padEnd(14))} ` +
+      `${row.ok ? green(status) : red(status)}           ` +
+      `${dim(row.time)}`
+    );
+  });
+}
+
+printTable([
+  { name: 'Build', ok: true, time: '2.3s' },
+  { name: 'Test', ok: false, time: '0.8s' },
+]);
+```
+
+### Progress Indicators
+
+```javascript
+import { blue, green, dim } from '@core/utils/colors';
+
+function showProgress(current, total, label) {
+  const percent = Math.round((current / total) * 100);
+  const bar = '█'.repeat(current) + '░'.repeat(total - current);
+  
+  console.log(
+    `${blue(label)} ${bar} ${green(percent + '%')} ${dim(`(${current}/${total})`)}`
+  );
+}
+
+showProgress(7, 10, 'Installing');
+// Installing ███████░░░ 70% (7/10)
+```
+
+### Log Levels
+
+```javascript
+import { red, yellow, blue, green, dim } from '@core/utils/colors';
+
+class Logger {
+  error(msg) { console.error(red(`[ERROR] ${msg}`)); }
+  warn(msg) { console.warn(yellow(`[WARN]  ${msg}`)); }
+  info(msg) { console.log(blue(`[INFO]  ${msg}`)); }
+  success(msg) { console.log(green(`[OK]    ${msg}`)); }
+  debug(msg) { console.log(dim(`[DEBUG] ${msg}`)); }
+}
+
+const log = new Logger();
+log.error('Connection failed');
+log.warn('Retrying...');
+log.info('Connected to server');
+log.success('Data synced');
+log.debug('Cache hit: user_123');
+```
+
+## Combining Styles
+
+```javascript
+import { BOLD, RED, UNDERLINE, RESET } from '@core/utils/colors';
+
+// Multiple styles
+const critical = `${BOLD}${RED}${UNDERLINE}CRITICAL${RESET}`;
+console.log(critical);
+
+// Custom helper
+function boldRed(text) {
+  return `${BOLD}${RED}${text}${RESET}`;
+}
+
+console.log(boldRed('Important!'));
+```
+
+## Color Reference
+
+| Function | Color | Use Case |
+|----------|-------|----------|
+| `red()` | Red | Errors, failures |
+| `green()` | Green | Success, completed |
+| `yellow()` | Yellow | Warnings, cautions |
+| `blue()` | Blue | Info, processing |
+| `magenta()` | Magenta | Debug, special |
+| `cyan()` | Cyan | Highlights, links |
+| `bold()` | Bold | Headers, emphasis |
+| `dim()` | Dimmed | Secondary info |
+
+## Notes
+
+- All helper functions automatically append `RESET` to restore normal formatting
+- ANSI codes work in most modern terminals
+- Colors may not display in all environments (e.g., log files, some CI systems)
+- Use `RESET` constant to clear formatting when using raw constants
+
+## Related
+
+- [Node.js Modules](/api/node-modules)

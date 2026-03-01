@@ -1,0 +1,354 @@
+---
+title: MIME Types
+description: File MIME type detection and categorization utilities
+---
+
+## Overview
+
+MIME type utilities provide file type detection based on file extensions and categorization of files by their content type.
+
+## getMimeType()
+
+Get the MIME type for a filename based on its extension.
+
+### Signature
+
+```typescript
+function getMimeType(filename: string): string
+```
+
+### Parameters
+
+- **filename** `string` - File name or path
+
+### Returns
+
+MIME type string. Returns `'application/octet-stream'` if extension is unknown.
+
+### Usage
+
+<CodeGroup>
+```javascript Text Files
+import { getMimeType } from '@core/utils/mime';
+
+getMimeType('document.txt'); // 'text/plain'
+getMimeType('README.md'); // 'text/markdown'
+getMimeType('config.json'); // 'application/json'
+getMimeType('script.js'); // 'text/javascript'
+```
+
+```javascript Images
+getMimeType('photo.jpg'); // 'image/jpeg'
+getMimeType('logo.png'); // 'image/png'
+getMimeType('icon.svg'); // 'image/svg+xml'
+getMimeType('animation.gif'); // 'image/gif'
+```
+
+```javascript Code Files
+getMimeType('index.ts'); // 'text/typescript'
+getMimeType('component.tsx'); // 'text/tsx'
+getMimeType('main.py'); // 'text/x-python'
+getMimeType('server.go'); // 'text/x-go'
+```
+
+```javascript Archives
+getMimeType('archive.zip'); // 'application/zip'
+getMimeType('backup.tar'); // 'application/x-tar'
+getMimeType('data.gz'); // 'application/gzip'
+```
+</CodeGroup>
+
+## getFileCategory()
+
+Categorize a file by its MIME type.
+
+### Signature
+
+```typescript
+function getFileCategory(mime: string): 'text' | 'image' | 'video' | 'audio' | 'archive' | 'binary'
+```
+
+### Parameters
+
+- **mime** `string` - MIME type string
+
+### Returns
+
+Category: `'text'`, `'image'`, `'video'`, `'audio'`, `'archive'`, or `'binary'`
+
+### Usage
+
+```javascript
+import { getFileCategory, getMimeType } from '@core/utils/mime';
+
+const mime = getMimeType('document.pdf');
+const category = getFileCategory(mime);
+// 'binary'
+
+getFileCategory('text/plain'); // 'text'
+getFileCategory('image/png'); // 'image'
+getFileCategory('video/mp4'); // 'video'
+getFileCategory('audio/mpeg'); // 'audio'
+getFileCategory('application/zip'); // 'archive'
+getFileCategory('application/pdf'); // 'binary'
+```
+
+## isBinaryMime()
+
+Check if a MIME type represents binary (non-text) data.
+
+### Signature
+
+```typescript
+function isBinaryMime(mime: string): boolean
+```
+
+### Parameters
+
+- **mime** `string` - MIME type string
+
+### Returns
+
+`true` if the MIME type is binary (not text), `false` otherwise.
+
+### Usage
+
+```javascript
+import { isBinaryMime } from '@core/utils/mime';
+
+isBinaryMime('text/plain'); // false
+isBinaryMime('application/json'); // false (treated as text)
+isBinaryMime('image/png'); // true
+isBinaryMime('video/mp4'); // true
+isBinaryMime('application/pdf'); // true
+```
+
+## Supported File Types
+
+### Text Files
+
+| Extension | MIME Type |
+|-----------|------------|
+| `.txt` | `text/plain` |
+| `.md` | `text/markdown` |
+| `.json` | `application/json` |
+| `.js` | `text/javascript` |
+| `.ts` | `text/typescript` |
+| `.jsx` | `text/jsx` |
+| `.tsx` | `text/tsx` |
+| `.css` | `text/css` |
+| `.html` | `text/html` |
+| `.xml` | `text/xml` |
+| `.yaml`, `.yml` | `text/yaml` |
+| `.csv` | `text/csv` |
+| `.log` | `text/plain` |
+
+### Programming Languages
+
+| Extension | MIME Type |
+|-----------|------------|
+| `.py` | `text/x-python` |
+| `.rb` | `text/x-ruby` |
+| `.go` | `text/x-go` |
+| `.rs` | `text/x-rust` |
+| `.c` | `text/x-c` |
+| `.cpp` | `text/x-c++` |
+| `.java` | `text/x-java` |
+| `.sh`, `.bash`, `.zsh` | `text/x-shellscript` |
+| `.sql` | `text/x-sql` |
+
+### Images
+
+| Extension | MIME Type |
+|-----------|------------|
+| `.png` | `image/png` |
+| `.jpg`, `.jpeg` | `image/jpeg` |
+| `.gif` | `image/gif` |
+| `.svg` | `image/svg+xml` |
+| `.webp` | `image/webp` |
+| `.ico` | `image/x-icon` |
+
+### Video
+
+| Extension | MIME Type |
+|-----------|------------|
+| `.mp4` | `video/mp4` |
+| `.webm` | `video/webm` |
+| `.avi` | `video/x-msvideo` |
+| `.mov` | `video/quicktime` |
+| `.mkv` | `video/x-matroska` |
+
+### Audio
+
+| Extension | MIME Type |
+|-----------|------------|
+| `.mp3` | `audio/mpeg` |
+| `.wav` | `audio/wav` |
+| `.ogg` | `audio/ogg` |
+| `.flac` | `audio/flac` |
+| `.m4a` | `audio/mp4` |
+
+### Archives
+
+| Extension | MIME Type |
+|-----------|------------|
+| `.zip` | `application/zip` |
+| `.tar` | `application/x-tar` |
+| `.gz`, `.tgz` | `application/gzip` |
+| `.bz2` | `application/x-bzip2` |
+| `.7z` | `application/x-7z-compressed` |
+| `.rar` | `application/vnd.rar` |
+
+### Binary / Application
+
+| Extension | MIME Type |
+|-----------|------------|
+| `.pdf` | `application/pdf` |
+| `.wasm` | `application/wasm` |
+| `.exe`, `.dll` | `application/x-msdownload` |
+| `.so`, `.dylib` | `application/x-sharedlib` |
+
+## Usage Examples
+
+### File Upload Validation
+
+```javascript
+import { getMimeType, isBinaryMime } from '@core/utils/mime';
+
+function validateUpload(filename) {
+  const mime = getMimeType(filename);
+  
+  const allowedTypes = [
+    'image/png',
+    'image/jpeg',
+    'application/pdf',
+  ];
+  
+  if (!allowedTypes.includes(mime)) {
+    throw new Error(`File type ${mime} not allowed`);
+  }
+  
+  return mime;
+}
+
+validateUpload('photo.jpg'); // 'image/jpeg'
+validateUpload('script.js'); // throws Error
+```
+
+### Content Type Headers
+
+```javascript
+import { getMimeType } from '@core/utils/mime';
+
+function serveFile(path, response) {
+  const mime = getMimeType(path);
+  response.setHeader('Content-Type', mime);
+  // ... send file
+}
+```
+
+### File Processing by Type
+
+```javascript
+import { getMimeType, getFileCategory } from '@core/utils/mime';
+
+function processFile(filename, content) {
+  const mime = getMimeType(filename);
+  const category = getFileCategory(mime);
+  
+  switch (category) {
+    case 'text':
+      return processTextFile(content);
+    case 'image':
+      return processImage(content);
+    case 'archive':
+      return extractArchive(content);
+    default:
+      return content;
+  }
+}
+```
+
+### Filter Files by Type
+
+```javascript
+import { getMimeType, isBinaryMime } from '@core/utils/mime';
+
+function filterTextFiles(files) {
+  return files.filter(file => {
+    const mime = getMimeType(file.name);
+    return !isBinaryMime(mime);
+  });
+}
+
+const files = [
+  { name: 'readme.md' },
+  { name: 'photo.jpg' },
+  { name: 'config.json' },
+  { name: 'video.mp4' },
+];
+
+filterTextFiles(files);
+// [{ name: 'readme.md' }, { name: 'config.json' }]
+```
+
+### File Icon Selection
+
+```javascript
+import { getFileCategory, getMimeType } from '@core/utils/mime';
+
+function getFileIcon(filename) {
+  const category = getFileCategory(getMimeType(filename));
+  
+  const icons = {
+    text: '📄',
+    image: '🖼️',
+    video: '🎬',
+    audio: '🎵',
+    archive: '📦',
+    binary: '📁',
+  };
+  
+  return icons[category];
+}
+
+getFileIcon('document.txt'); // '📄'
+getFileIcon('photo.png'); // '🖼️'
+getFileIcon('archive.zip'); // '📦'
+```
+
+### Directory Listing
+
+```javascript
+import { getMimeType, getFileCategory } from '@core/utils/mime';
+
+function listFiles(files) {
+  files.forEach(file => {
+    const mime = getMimeType(file.name);
+    const category = getFileCategory(mime);
+    console.log(`${file.name} [${category}] - ${mime}`);
+  });
+}
+
+listFiles([
+  { name: 'index.html' },
+  { name: 'styles.css' },
+  { name: 'logo.svg' },
+]);
+// index.html [text] - text/html
+// styles.css [text] - text/css
+// logo.svg [image] - image/svg+xml
+```
+
+## Notes
+
+- Detection is based on file extension only (not content analysis)
+- Extensions are case-insensitive
+- Unknown extensions return `'application/octet-stream'`
+- `application/json` is categorized as `'text'`
+- Path separators are allowed in filename
+
+## Related
+
+- [Path Utilities](/api/path)
+- [Node.js Modules](/api/node-modules)

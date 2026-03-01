@@ -1,0 +1,316 @@
+---
+title: "Persistence"
+description: "Persist and restore filesystem state using pluggable backends"
+---
+
+## Overview
+
+The Persistence API provides filesystem tree serialization and storage management with support for multiple backends. It includes automatic debouncing for efficient saves and graceful error handling.
+
+## PersistenceManager
+
+Manages the lifecycle of filesystem persistence with automatic debouncing and error recovery.
+
+### Constructor
+
+```typescript
+new PersistenceManager(backend: PersistenceBackend)
+```
+
+<ParamField path="backend" type="PersistenceBackend" required>
+  The storage backend implementation (e.g., `IndexedDBPersistenceBackend` or `MemoryPersistenceBackend`)
+</ParamField>
+
+### Methods
+
+#### open
+
+Initializes the persistence backend.
+
+```typescript
+async open(): Promise<void>
+```
+
+**Example:**
+```typescript
+const backend = new IndexedDBPersistenceBackend();
+const manager = new PersistenceManager(backend);
+await manager.open();
+```
+
+#### load
+
+Loads the filesystem tree from persistent storage.
+
+```typescript
+async load(): Promise<INode | null>
+```
+
+<ResponseField name="return" type="INode | null">
+  Returns the deserialized root node, or `null` if no saved state exists or deserialization fails
+</ResponseField>
+
+**Example:**
+```typescript
+const root = await manager.load();
+if (root) {
+  console.log('Restored filesystem from storage');
+} else {
+  console.log('No saved state found');
+}
+```
+
+#### save
+
+Immediately saves the filesystem tree to persistent storage.
+
+```typescript
+async save(root: INode): Promise<void>
+```
+
+<ParamField path="root" type="INode" required>
+  The root node of the filesystem tree to persist
+</ParamField>
+
+**Example:**
+```typescript
+await manager.save(rootNode);
+```
+
+<Note>
+  Save errors are gracefully ignored to prevent disrupting the application. Use `scheduleSave` for automatic debouncing.
+</Note>
+
+#### scheduleSave
+
+Schedules a debounced save operation. Automatically cancels pending saves.
+
+```typescript
+scheduleSave(root: INode): void
+```
+
+<ParamField path="root" type="INode" required>
+  The root node of the filesystem tree to persist
+</ParamField>
+
+**Example:**
+```typescript
+// Multiple rapid calls will only trigger one save after 1 second
+manager.scheduleSave(rootNode);
+manager.scheduleSave(rootNode); // Cancels previous
+manager.scheduleSave(rootNode); // Only this one executes
+```
+
+<Info>
+  The debounce interval is 1000ms (1 second). See `PersistenceManager.ts:5`
+</Info>
+
+---
+
+## PersistenceBackend Interface
+
+Defines the contract for persistence storage implementations.
+
+```typescript
+interface PersistenceBackend {
+  open(): Promise<void>;
+  loadTree(): Promise<SerializedNode | null>;
+  saveTree(root: SerializedNode): Promise<void>;
+  close?(): Promise<void>;
+}
+```
+
+<ParamField path="open" type="() => Promise<void>" required>
+  Initialize the storage backend
+</ParamField>
+
+<ParamField path="loadTree" type="() => Promise<SerializedNode | null>" required>
+  Load the serialized filesystem tree. Returns `null` if not found.
+</ParamField>
+
+<ParamField path="saveTree" type="(root: SerializedNode) => Promise<void>" required>
+  Save the serialized filesystem tree
+</ParamField>
+
+<ParamField path="close" type="() => Promise<void>">
+  Optional cleanup method to close connections and release resources
+</ParamField>
+
+---
+
+## IndexedDBPersistenceBackend
+
+Browser-based persistent storage using IndexedDB.
+
+### Constructor
+
+```typescript
+new IndexedDBPersistenceBackend()
+```
+
+### Configuration
+
+- **Database name:** `lifo` (see `backends.ts:18`)
+- **Object store:** `filesystem` (see `backends.ts:19`)
+- **Storage key:** `root` (see `backends.ts:20`)
+
+### Methods
+
+#### open
+
+Opens or creates the IndexedDB database.
+
+```typescript
+async open(): Promise<void>
+```
+
+<Note>
+  Automatically creates the object store on first use. Gracefully degrades if IndexedDB is unavailable.
+</Note>
+
+#### loadTree
+
+Retrieves the filesystem tree from IndexedDB.
+
+```typescript
+async loadTree(): Promise<SerializedNode | null>
+```
+
+<ResponseField name="return" type="SerializedNode | null">
+  The serialized filesystem tree, or `null` if not found or on error
+</ResponseField>
+
+#### saveTree
+
+Persists the filesystem tree to IndexedDB.
+
+```typescript
+async saveTree(root: SerializedNode): Promise<void>
+```
+
+<ParamField path="root" type="SerializedNode" required>
+  The serialized filesystem tree to store
+</ParamField>
+
+#### close
+
+Closes the IndexedDB connection.
+
+```typescript
+async close(): Promise<void>
+```
+
+### Example
+
+```typescript
+const backend = new IndexedDBPersistenceBackend();
+await backend.open();
+
+// Save
+const serializedTree = serialize(rootNode);
+await backend.saveTree(serializedTree);
+
+// Load
+const loaded = await backend.loadTree();
+if (loaded) {
+  const restored = deserialize(loaded);
+}
+
+// Cleanup
+await backend.close();
+```
+
+---
+
+## MemoryPersistenceBackend
+
+In-memory storage for testing and temporary filesystems.
+
+### Constructor
+
+```typescript
+new MemoryPersistenceBackend()
+```
+
+### Methods
+
+#### open
+
+```typescript
+async open(): Promise<void>
+```
+
+No-op for in-memory storage.
+
+#### loadTree
+
+```typescript
+async loadTree(): Promise<SerializedNode | null>
+```
+
+<ResponseField name="return" type="SerializedNode | null">
+  The in-memory serialized tree, or `null` if nothing has been saved
+</ResponseField>
+
+#### saveTree
+
+```typescript
+async saveTree(root: SerializedNode): Promise<void>
+```
+
+<ParamField path="root" type="SerializedNode" required>
+  The serialized filesystem tree to store in memory
+</ParamField>
+
+#### close
+
+```typescript
+async close(): Promise<void>
+```
+
+Clears the in-memory storage.
+
+### Example
+
+```typescript
+const backend = new MemoryPersistenceBackend();
+await backend.open();
+
+const serialized = serialize(rootNode);
+await backend.saveTree(serialized);
+
+const loaded = await backend.loadTree();
+console.log(loaded === serialized); // true
+
+await backend.close(); // Clears memory
+```
+
+<Tip>
+  Use `MemoryPersistenceBackend` for unit tests or when persistence between sessions is not needed.
+</Tip>
+
+---
+
+## SerializedNode Format
+
+Compact representation of filesystem nodes.
+
+```typescript
+interface SerializedNode {
+  t: 'f' | 'd';              // Type: file or directory
+  n: string;                  // Name
+  d?: string;                 // Base64 data (small files only)
+  c?: SerializedNode[];       // Children (directories only)
+  ct: number;                 // Creation time (Unix timestamp)
+  mt: number;                 // Modification time (Unix timestamp)
+  m: number;                  // Unix mode/permissions
+  mi?: string;                // MIME type (files only)
+  br?: string;                // Blob store reference hash
+  ch?: SerializedChunkRef[];  // Chunk manifest (large files)
+  sz?: number;                // Stored size (when chunked)
+}
+```
+
+<Info>
+  Virtual directories (`proc`, `dev`) are excluded during serialization. See `serializer.ts:22`
+</Info>

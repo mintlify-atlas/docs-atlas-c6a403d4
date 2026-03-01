@@ -1,0 +1,239 @@
+---
+title: Node.js Module Compatibility
+description: Create and access Node.js-compatible modules in the runtime
+---
+
+## Overview
+
+The `createModuleMap()` function provides a Node.js compatibility layer, allowing you to use familiar Node.js modules in the runtime environment.
+
+## createModuleMap()
+
+Creates a map of Node.js-compatible modules that can be dynamically loaded.
+
+### Signature
+
+```typescript
+function createModuleMap(ctx: NodeContext): Record<string, () => unknown>
+```
+
+### Parameters
+
+- **ctx** `NodeContext` - Runtime context containing:
+  - `vfs` - Virtual file system
+  - `cwd` - Current working directory
+  - `env` - Environment variables
+  - `stdout` / `stderr` - Output streams
+  - `argv` - Command-line arguments
+  - `filename` / `dirname` - Current file paths
+  - `signal` - Abort signal
+  - `executeCapture` - Command execution function (optional)
+  - `portRegistry` - HTTP port registry (optional)
+
+### Returns
+
+Object mapping module names to factory functions.
+
+### Usage
+
+```javascript
+import { createModuleMap } from '@core/node-compat';
+
+const modules = createModuleMap({
+  vfs,
+  cwd: '/home/user',
+  env: process.env,
+  stdout,
+  stderr,
+  argv: ['node', 'script.js'],
+  filename: '/home/user/script.js',
+  dirname: '/home/user',
+  signal: new AbortController().signal,
+});
+
+// Access modules
+const fs = modules.fs();
+const path = modules.path();
+```
+
+## Available Modules
+
+The following 15 Node.js core modules are available:
+
+### File System
+
+<CodeGroup>
+```javascript fs
+const fs = modules.fs();
+const fsPromises = modules['fs/promises']();
+```
+</CodeGroup>
+
+Provides file system operations (read, write, stat, etc.)
+
+### Path
+
+```javascript
+const path = modules.path();
+```
+
+Path manipulation utilities. See [Path API](/api/path) for details.
+
+### Events
+
+```javascript
+const { EventEmitter } = modules.events();
+```
+
+Event emitter implementation for publish-subscribe patterns.
+
+### Buffer
+
+```javascript
+const { Buffer } = modules.buffer();
+```
+
+Binary data manipulation. See [Buffer API](/api/buffer) for details.
+
+### Utilities
+
+```javascript
+const util = modules.util();
+```
+
+Common utility functions (promisify, inspect, etc.)
+
+### Operating System
+
+```javascript
+const os = modules.os();
+```
+
+OS-level information (platform, hostname, etc.)
+
+### Process
+
+```javascript
+const process = modules.process();
+```
+
+Current process information and control.
+
+### HTTP/HTTPS
+
+<CodeGroup>
+```javascript http
+const http = modules.http();
+```
+
+```javascript https
+const https = modules.https();
+```
+</CodeGroup>
+
+HTTP server and client functionality.
+
+### Child Process
+
+```javascript
+const child_process = modules.child_process();
+```
+
+Spawn and execute child processes.
+
+### Stream
+
+```javascript
+const stream = modules.stream();
+```
+
+Streaming data interfaces.
+
+### URL
+
+```javascript
+const url = modules.url();
+```
+
+URL parsing and manipulation.
+
+### Timers
+
+```javascript
+const timers = modules.timers();
+```
+
+Timing functions (setTimeout, setInterval, etc.)
+
+### Crypto
+
+```javascript
+const crypto = modules.crypto();
+```
+
+Cryptographic operations.
+
+### Zlib
+
+```javascript
+const zlib = modules.zlib();
+```
+
+Compression and decompression.
+
+### String Decoder
+
+```javascript
+const string_decoder = modules.string_decoder();
+```
+
+Decode buffers to strings.
+
+## Additional Modules
+
+### Query String
+
+```javascript
+const qs = modules.querystring();
+
+// Parse query string
+const params = qs.parse('foo=bar&baz=qux');
+// { foo: 'bar', baz: 'qux' }
+
+// Stringify object
+const str = qs.stringify({ foo: 'bar', baz: 'qux' });
+// 'foo=bar&baz=qux'
+```
+
+### Assert
+
+```javascript
+const assert = modules.assert();
+
+assert(value, 'Value must be truthy');
+assert.equal(a, b);
+assert.strictEqual(a, b);
+assert.deepStrictEqual(obj1, obj2);
+assert.throws(() => { throw new Error(); });
+```
+
+## Example: Loading Multiple Modules
+
+```javascript
+import { createModuleMap } from '@core/node-compat';
+
+const modules = createModuleMap(context);
+
+// Load filesystem and path modules
+const fs = modules.fs();
+const path = modules.path();
+
+// Use them together
+const filePath = path.join('/home', 'user', 'file.txt');
+const content = fs.readFileSync(filePath, 'utf8');
+```
+
+## Related
+
+- [Buffer API](/api/buffer)
+- [Path API](/api/path)

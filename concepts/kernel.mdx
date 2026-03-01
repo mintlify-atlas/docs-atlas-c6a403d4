@@ -1,0 +1,416 @@
+---
+title: Kernel
+description: The Kernel class coordinates system initialization, persistence, and core services
+---
+
+The `Kernel` class is the central coordinator of a Lifo system. It manages the virtual filesystem, port registry (for virtual HTTP servers), and persistence.
+
+## Class Definition
+
+```typescript
+export class Kernel {
+  vfs: VFS;
+  portRegistry: Map<number, VirtualRequestHandler>;
+  private persistence: PersistenceManager;
+
+  constructor(backend?: PersistenceBackend)
+  async boot(options?: { persist?: boolean }): Promise<void>
+  initFilesystem(): void
+  getDefaultEnv(): Record<string, string>
+}
+```
+
+Location: `src/kernel/index.ts:61`
+
+## Constructor
+
+```typescript
+const kernel = new Kernel();
+
+// Or with a custom persistence backend:
+const kernel = new Kernel(new MyCustomBackend());
+```
+
+The constructor:
+
+1. Creates a new `VFS` instance
+2. Initializes an empty port registry
+3. Sets up the persistence manager (defaults to IndexedDB)
+
+The kernel does NOT automatically boot - you must call `kernel.boot()` to initialize the system.
+
+## Boot Sequence
+
+```typescript
+await kernel.boot({ persist: true });
+```
+
+The `boot()` method orchestrates system initialization:
+
+### Step 1: Load Persisted State (if enabled)
+
+```typescript
+if (persist) {
+  await this.persistence.open();
+  const saved = await this.persistence.load();
+  if (saved) {
+    this.vfs.loadFromSerialized(saved);
+  }
+}
+```
+
+If persistence is enabled (default), the kernel:
+
+- Opens the IndexedDB database
+- Loads the saved INode tree
+- Restores the VFS state
+
+See `src/kernel/index.ts:77-82`.
+
+### Step 2: Initialize Standard Directories
+
+```typescript
+this.initFilesystem();
+```
+
+Creates the standard Unix directory hierarchy (idempotent - won't fail if directories exist):
+
+```
+/bin           # Builtin commands (future use)
+/etc           # System configuration
+/home
+/home/user     # Default user home directory
+/tmp           # Temporary files
+/var
+/var/log       # Log files
+/usr
+/usr/bin       # User commands
+/usr/share
+/usr/share/pkg/node_modules  # Installed packages
+```
+
+Also writes system files:
+
+- `/etc/motd` - Message of the day (ANSI art banner)
+- `/etc/hostname` - System hostname (`lifo`)
+- `/etc/profile` - System-wide shell configuration
+- `/home/user/.liforc` - User shell configuration (with default aliases)
+
+See `src/kernel/index.ts:100-146`.
+
+### Step 3: Mount Virtual Providers
+
+```typescript
+this.vfs.registerProvider('/proc', new ProcProvider());
+this.vfs.registerProvider('/dev', new DevProvider());
+```
+
+Virtual providers overlay dynamic content onto the filesystem:
+
+- **`/proc`**: Runtime information (uptime, version, memory)
+- **`/dev`**: Device files (`/dev/null`, `/dev/zero`, `/dev/random`)
+
+See [Virtual Providers](#virtual-providers) below.
+
+### Step 4: Setup Persistence Watch (if enabled)
+
+```typescript
+if (persist) {
+  this.vfs.watch(() => {
+    this.persistence.scheduleSave(this.vfs.getRoot());
+  });
+}
+```
+
+Registers a global VFS watch listener that triggers a debounced save on any filesystem change.
+
+See `src/kernel/index.ts:94-97`.
+
+## Filesystem Initialization
+
+```typescript
+kernel.initFilesystem();
+```
+
+The `initFilesystem()` method is idempotent and can be called multiple times. It:
+
+1. Creates standard directories (skips if they exist)
+2. Writes system files (always overwrites `motd` and `hostname`)
+3. Writes config files only if they don't exist (preserves user edits)
+4. Installs sample/example files
+
+### Configuration Files
+
+**/etc/profile** (system-wide):
+
+```bash
+export PATH=/usr/bin:/bin
+export EDITOR=nano
+```
+
+**/home/user/.liforc** (user configuration):
+
+```bash
+# ─── Aliases ───
+alias ll='ls -la'
+alias la='ls -a'
+alias l='ls -1'
+alias ..='cd ..'
+alias ...='cd ../..'
+alias cls='clear'
+alias h='history'
+alias q='exit'
+alias md='mkdir -p'
+alias rd='rmdir'
+
+# ─── Environment ───
+export EDITOR=nano
+export PAGER=less
+```
+
+The shell sources these files on startup (in order: `/etc/profile`, then first of `~/.liforc`, `~/.bashrc`, `~/.profile`).
+
+See `src/kernel/index.ts:21-44` for default configs.
+
+<Note>
+The kernel migrates old `.bashrc` files to `.liforc` automatically to preserve user configurations across updates.
+</Note>
+
+## Default Environment
+
+```typescript
+const env = kernel.getDefaultEnv();
+// {
+//   HOME: '/home/user',
+//   USER: 'user',
+//   HOSTNAME: 'lifo',
+//   SHELL: '/bin/sh',
+//   PATH: '/usr/bin:/bin',
+//   TERM: 'xterm-256color',
+//   PWD: '/home/user',
+// }
+```
+
+Provides the default environment variables for new shells.
+
+See `src/kernel/index.ts:148-158`.
+
+## Port Registry
+
+The port registry maps TCP port numbers to virtual HTTP request handlers. This allows the Node.js `http` module shim to work:
+
+```typescript
+import http from 'http';
+
+const server = http.createServer((req, res) => {
+  res.writeHead(200, { 'Content-Type': 'text/plain' });
+  res.end('Hello from Lifo!');
+});
+
+server.listen(3000);
+```
+
+Under the hood:
+
+1. `http.createServer()` registers a handler in `kernel.portRegistry`
+2. `server.listen(3000)` maps port 3000 to the handler
+3. The `curl` command uses the registry to make virtual requests
+
+### Virtual Request Handler
+
+```typescript
+export interface VirtualRequest {
+  method: string;              // 'GET', 'POST', etc.
+  url: string;                 // '/path?query'
+  headers: Record<string, string>;
+  body: string;
+}
+
+export interface VirtualResponse {
+  statusCode: number;
+  headers: Record<string, string>;
+  body: string;
+}
+
+export type VirtualRequestHandler = (
+  req: VirtualRequest,
+  res: VirtualResponse
+) => void;
+```
+
+See `src/kernel/index.ts:46-59`.
+
+### Example: Registering a Custom Handler
+
+```typescript
+kernel.portRegistry.set(8080, (req, res) => {
+  res.statusCode = 200;
+  res.headers['Content-Type'] = 'application/json';
+  res.body = JSON.stringify({ status: 'ok', url: req.url });
+});
+
+// Now `curl localhost:8080/test` works!
+```
+
+## Virtual Providers
+
+Virtual providers implement dynamic filesystems that generate content on-the-fly.
+
+### ProcProvider (`/proc`)
+
+Provides runtime system information:
+
+```
+/proc/uptime      # System uptime in seconds
+/proc/version     # Lifo version string
+/proc/meminfo     # JavaScript heap usage
+```
+
+Implementation: `src/kernel/vfs/providers/ProcProvider.ts`
+
+```typescript
+class ProcProvider implements VirtualProvider {
+  readFile(subpath: string): Uint8Array
+  readFileString(subpath: string): string
+  exists(subpath: string): boolean
+  stat(subpath: string): Stat
+  readdir(subpath: string): Dirent[]
+}
+```
+
+Example usage:
+
+```bash
+$ cat /proc/version
+Lifo version 0.1.0 (browser)
+
+$ cat /proc/uptime
+123.456
+```
+
+### DevProvider (`/dev`)
+
+Provides special device files:
+
+```
+/dev/null      # Discards all writes, returns EOF on read
+/dev/zero      # Returns infinite zeros
+/dev/random    # Returns random bytes (Web Crypto)
+```
+
+Implementation: `src/kernel/vfs/providers/DevProvider.ts`
+
+Example usage:
+
+```bash
+$ echo "test" > /dev/null   # Discarded
+$ cat /dev/null              # No output (EOF)
+$ head -c 10 /dev/random | base64
+rQx2K8v+zA==
+```
+
+<Info>
+Virtual providers are stateless - they generate data on every read. This keeps memory usage low.
+</Info>
+
+## Persistence Manager
+
+The `PersistenceManager` handles saving and loading the VFS state.
+
+### Debounced Saves
+
+To avoid thrashing IndexedDB, saves are debounced:
+
+```typescript
+this.persistence.scheduleSave(this.vfs.getRoot());
+```
+
+- Multiple rapid changes trigger only one save
+- Default debounce: 500ms
+- Save is asynchronous (doesn't block the UI)
+
+Implementation: `src/kernel/persistence/PersistenceManager.ts`
+
+### Serialization Format
+
+The VFS tree is serialized to JSON:
+
+```typescript
+interface INode {
+  type: 'file' | 'directory';
+  name: string;
+  data: Uint8Array;        // Base64-encoded in JSON
+  children: Map<string, INode>;  // Serialized as array of [key, value]
+  ctime: number;
+  mtime: number;
+  mode: number;
+  mime?: string;
+  chunks?: ChunkRef[];     // For large files
+  storedSize?: number;
+}
+```
+
+Large files (≥1MB) are chunked and stored separately in the `ContentStore`.
+
+### Custom Backends
+
+You can implement custom persistence backends:
+
+```typescript
+interface PersistenceBackend {
+  open(): Promise<void>;
+  load(): Promise<INode | null>;
+  save(root: INode): Promise<void>;
+  close(): Promise<void>;
+}
+
+class LocalStorageBackend implements PersistenceBackend {
+  async open() {}
+  
+  async load(): Promise<INode | null> {
+    const data = localStorage.getItem('lifo-vfs');
+    return data ? JSON.parse(data) : null;
+  }
+  
+  async save(root: INode) {
+    localStorage.setItem('lifo-vfs', JSON.stringify(root));
+  }
+  
+  async close() {}
+}
+
+const kernel = new Kernel(new LocalStorageBackend());
+```
+
+## Usage Example
+
+```typescript
+import { Kernel } from '@lifo/core';
+
+// Create and boot a kernel
+const kernel = new Kernel();
+await kernel.boot({ persist: true });
+
+// Access the VFS
+kernel.vfs.writeFile('/hello.txt', 'Hello, world!');
+const content = kernel.vfs.readFileString('/hello.txt');
+
+// Register a virtual HTTP server
+kernel.portRegistry.set(3000, (req, res) => {
+  res.statusCode = 200;
+  res.body = 'Hello from port 3000!';
+});
+
+// Get default environment
+const env = kernel.getDefaultEnv();
+```
+
+<Note>
+Most users should use the [Sandbox](/concepts/sandbox) class instead of the Kernel directly. Sandbox provides a higher-level API and handles shell/terminal setup.
+</Note>
+
+## Related
+
+- [Virtual Filesystem](/concepts/virtual-filesystem) - VFS implementation details
+- [Sandbox](/concepts/sandbox) - High-level API built on Kernel
+- [Architecture](/concepts/architecture) - How Kernel fits in the system

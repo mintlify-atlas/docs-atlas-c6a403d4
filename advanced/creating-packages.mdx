@@ -1,0 +1,588 @@
+---
+title: Creating Packages
+description: Build and distribute Lifo packages with the lifo.json manifest format
+---
+
+Lifo packages extend the system with custom commands, tools, and utilities. Packages are distributed as standard npm packages with a special `lifo` field in `package.json` that defines command entries and capabilities.
+
+## Package Structure
+
+A Lifo package is a standard npm package with additional metadata:
+
+```
+my-lifo-package/
+├── package.json          # Package metadata with lifo field
+├── src/
+│   ├── greet.js         # Command entry point
+│   └── stats.js         # Another command
+├── README.md
+└── LICENSE
+```
+
+## Package Manifest
+
+Add a `lifo` field to your `package.json`:
+
+```json
+{
+  "name": "my-lifo-tools",
+  "version": "1.0.0",
+  "description": "Custom Lifo commands",
+  "lifo": {
+    "commands": {
+      "greet": "./src/greet.js",
+      "stats": "./src/stats.js"
+    }
+  },
+  "keywords": ["lifo", "cli", "tools"]
+}
+```
+
+### Manifest Format
+
+The `lifo` field defines command mappings:
+
+```typescript
+// src/pkg/lifo-runtime.ts:23-25
+interface LifoPackageManifest {
+  commands: Record<string, string>;  // command name -> relative path to entry JS
+}
+```
+
+## Writing Commands
+
+Lifo packages support both CommonJS and ES Modules.
+
+### CommonJS Format
+
+Export an async function that receives `ctx` and `lifo`:
+
+```javascript
+// src/greet.js
+module.exports = async function(ctx, lifo) {
+  const name = ctx.args[0] || 'World';
+  ctx.stdout.write(`Hello, ${name}!\n`);
+  return 0;
+};
+```
+
+### ES Module Format
+
+Export a default async function:
+
+```javascript
+// src/stats.js
+export default async function(ctx, lifo) {
+  const files = ctx.args;
+  
+  for (const file of files) {
+    const path = lifo.resolve(file);
+    try {
+      const stat = ctx.vfs.stat(path);
+      ctx.stdout.write(`${file}: ${stat.size} bytes\n`);
+    } catch (e) {
+      ctx.stderr.write(`stats: ${file}: ${e.message}\n`);
+      return 1;
+    }
+  }
+  
+  return 0;
+};
+```
+
+## The Lifo API
+
+Package commands receive a special `lifo` object with enhanced capabilities:
+
+```typescript
+// src/pkg/lifo-runtime.ts:27-39
+interface LifoAPI {
+  /** Import an ESM module from CDN. Cached after first load. */
+  import(specifier: string): Promise<unknown>;
+
+  /** Fetch, compile and cache a WebAssembly module from a URL. */
+  loadWasm(url: string): Promise<WebAssembly.Module>;
+
+  /** Resolve a path relative to the command's cwd. */
+  resolve(path: string): string;
+
+  /** The CDN base URL currently in use. */
+  readonly cdn: string;
+}
+```
+
+### Importing Dependencies
+
+Load npm packages directly from CDN:
+
+```javascript
+// src/pkg/lifo-runtime.ts:61-72
+export default async function(ctx, lifo) {
+  // Import from esm.sh (default CDN)
+  const chalk = await lifo.import('chalk@5');
+  
+  ctx.stdout.write(chalk.blue('Hello from Chalk!\n'));
+  return 0;
+};
+```
+
+The CDN URL can be customized via the `LIFO_CDN` environment variable:
+
+```bash
+export LIFO_CDN=https://cdn.skypack.dev
+```
+
+### Loading WebAssembly
+
+Load and execute WASM modules:
+
+```javascript
+export default async function(ctx, lifo) {
+  // src/pkg/lifo-runtime.ts:75-88
+  const wasmModule = await lifo.loadWasm('https://example.com/crypto.wasm');
+  const instance = await WebAssembly.instantiate(wasmModule, {});
+  
+  const result = instance.exports.hash('data');
+  ctx.stdout.write(`Hash: ${result}\n`);
+  return 0;
+};
+```
+
+### Path Resolution
+
+Resolve relative paths:
+
+```javascript
+export default async function(ctx, lifo) {
+  // src/pkg/lifo-runtime.ts:90-92
+  const configPath = lifo.resolve('./config.json');
+  const config = JSON.parse(ctx.vfs.readFileString(configPath));
+  
+  ctx.stdout.write(`Config: ${config.name}\n`);
+  return 0;
+};
+```
+
+## Using Node.js Built-ins
+
+Lifo provides Node.js compatibility shims:
+
+```javascript
+// All standard Node.js globals are available
+module.exports = async function(ctx, lifo) {
+  const path = require('path');
+  const fs = require('fs');
+  
+  // Use Buffer
+  const buf = Buffer.from('hello');
+  console.log('Buffer:', buf.toString('hex'));
+  
+  // Process API
+  console.log('CWD:', process.cwd());
+  console.log('Args:', process.argv);
+  
+  // Timers
+  await new Promise(resolve => setTimeout(resolve, 100));
+  
+  return 0;
+};
+```
+
+Available built-ins:
+- `process` - Process information and control
+- `console` - Logging (outputs to ctx.stdout/stderr)
+- `Buffer` - Binary data handling
+- `require()` - Module loading
+- `setTimeout`, `setInterval`, `clearTimeout`, `clearInterval`
+- `__filename`, `__dirname` - Module paths
+
+## Requiring Local Modules
+
+Load modules relative to your package:
+
+```javascript
+// src/greet.js
+const utils = require('./utils');
+const config = require('./config.json');
+
+module.exports = async function(ctx, lifo) {
+  const message = utils.formatGreeting(ctx.args[0]);
+  ctx.stdout.write(message);
+  return 0;
+};
+```
+
+```javascript
+// src/utils.js
+exports.formatGreeting = function(name) {
+  return `Hello, ${name || 'World'}!\n`;
+};
+```
+
+## Complete Example: JSON Formatter
+
+<Steps>
+
+<Step title="Create package.json">
+
+```json
+{
+  "name": "lifo-json-tools",
+  "version": "1.0.0",
+  "description": "JSON formatting and validation tools for Lifo",
+  "lifo": {
+    "commands": {
+      "json-format": "./src/format.js",
+      "json-validate": "./src/validate.js",
+      "json-minify": "./src/minify.js"
+    }
+  },
+  "keywords": ["lifo", "json", "formatter"]
+}
+```
+
+</Step>
+
+<Step title="Write command implementations">
+
+```javascript
+// src/format.js
+module.exports = async function(ctx, lifo) {
+  const indent = ctx.env.JSON_INDENT || '2';
+  const spaces = parseInt(indent, 10);
+  
+  // Read from stdin or file
+  let input;
+  if (ctx.stdin) {
+    input = await ctx.stdin.readAll();
+  } else if (ctx.args.length > 0) {
+    const path = lifo.resolve(ctx.args[0]);
+    input = ctx.vfs.readFileString(path);
+  } else {
+    ctx.stderr.write('Usage: json-format [file]\n');
+    return 1;
+  }
+  
+  try {
+    const obj = JSON.parse(input);
+    const formatted = JSON.stringify(obj, null, spaces);
+    ctx.stdout.write(formatted + '\n');
+    return 0;
+  } catch (e) {
+    ctx.stderr.write(`json-format: ${e.message}\n`);
+    return 1;
+  }
+};
+```
+
+```javascript
+// src/validate.js
+module.exports = async function(ctx, lifo) {
+  const files = ctx.args;
+  
+  if (files.length === 0) {
+    ctx.stderr.write('Usage: json-validate <files...>\n');
+    return 1;
+  }
+  
+  let errors = 0;
+  
+  for (const file of files) {
+    const path = lifo.resolve(file);
+    try {
+      const content = ctx.vfs.readFileString(path);
+      JSON.parse(content);  // Validate
+      ctx.stdout.write(`${file}: valid\n`);
+    } catch (e) {
+      ctx.stderr.write(`${file}: ${e.message}\n`);
+      errors++;
+    }
+  }
+  
+  return errors > 0 ? 1 : 0;
+};
+```
+
+```javascript
+// src/minify.js
+module.exports = async function(ctx, lifo) {
+  const input = await ctx.stdin.readAll();
+  
+  try {
+    const obj = JSON.parse(input);
+    const minified = JSON.stringify(obj);  // No spacing
+    ctx.stdout.write(minified);
+    return 0;
+  } catch (e) {
+    ctx.stderr.write(`json-minify: ${e.message}\n`);
+    return 1;
+  }
+};
+```
+
+</Step>
+
+<Step title="Test locally">
+
+Install in your Lifo environment:
+
+```bash
+cd my-lifo-package
+npm link
+lifo install .
+```
+
+Test the commands:
+
+```bash
+echo '{"name":"test"}' | json-format
+json-validate *.json
+cat data.json | json-minify > output.json
+```
+
+</Step>
+
+<Step title="Publish to npm">
+
+```bash
+npm publish
+```
+
+Users can install it:
+
+```bash
+lifo install lifo-json-tools
+```
+
+</Step>
+
+</Steps>
+
+## Advanced: Using External Dependencies
+
+Import packages dynamically at runtime:
+
+```javascript
+export default async function(ctx, lifo) {
+  // Load markdown parser from CDN
+  const marked = await lifo.import('marked@9');
+  
+  const input = await ctx.stdin.readAll();
+  const html = marked.parse(input);
+  
+  ctx.stdout.write(html);
+  return 0;
+};
+```
+
+This keeps your package lightweight—dependencies are loaded on-demand.
+
+## Package Discovery
+
+Lifo looks for packages in these locations:
+
+1. `./node_modules/` - Local project dependencies
+2. `../node_modules/` - Parent directories (walked upward)
+3. `/usr/lib/node_modules/` - Global system packages
+4. `/usr/share/pkg/node_modules/` - Shared package repository
+
+The resolution algorithm:
+
+```typescript
+// src/pkg/lifo-runtime.ts:358-398
+// Walk up from current directory looking for node_modules
+function resolveNodeModule(name: string, fromDir: string): string | null {
+  let cur = fromDir;
+  for (;;) {
+    const candidate = join(cur, 'node_modules', name);
+    if (vfs.exists(candidate)) {
+      return resolvePackageEntry(candidate);
+    }
+    const parent = dirname(cur);
+    if (parent === cur) break;
+    cur = parent;
+  }
+  
+  // Try global locations
+  for (const base of ['/usr/lib/node_modules', '/usr/share/pkg/node_modules']) {
+    const candidate = join(base, name);
+    if (vfs.exists(candidate)) {
+      return resolvePackageEntry(candidate);
+    }
+  }
+  
+  return null;
+}
+```
+
+## Reading Package Manifests
+
+Programmatically read package metadata:
+
+```typescript
+import { readLifoManifest } from '@lifo/core/pkg/lifo-runtime';
+
+// src/pkg/lifo-runtime.ts:550-558
+const manifest = readLifoManifest(vfs, '/usr/share/pkg/node_modules/my-package');
+if (manifest) {
+  console.log('Commands:', Object.keys(manifest.commands));
+}
+```
+
+## Error Handling
+
+Handle errors gracefully:
+
+```javascript
+module.exports = async function(ctx, lifo) {
+  try {
+    // Your command logic
+    const result = dangerousOperation();
+    ctx.stdout.write(result);
+    return 0;
+  } catch (e) {
+    // Log error to stderr
+    ctx.stderr.write(`Error: ${e.message}\n`);
+    
+    // Include stack trace if available
+    if (e.stack) {
+      ctx.stderr.write(e.stack + '\n');
+    }
+    
+    return 1;  // Non-zero exit code
+  }
+};
+```
+
+## Testing Packages
+
+Test your commands using the Lifo test utilities:
+
+```javascript
+import { describe, it, expect } from 'vitest';
+import { createTestContext } from '@lifo/core/testing';
+import greetCommand from './src/greet.js';
+
+describe('greet command', () => {
+  it('greets by name', async () => {
+    const ctx = createTestContext({
+      args: ['Alice']
+    });
+    
+    const exitCode = await greetCommand(ctx, ctx.lifo);
+    
+    expect(exitCode).toBe(0);
+    expect(ctx.stdout.output).toBe('Hello, Alice!\n');
+  });
+  
+  it('defaults to World', async () => {
+    const ctx = createTestContext({ args: [] });
+    
+    await greetCommand(ctx, ctx.lifo);
+    
+    expect(ctx.stdout.output).toBe('Hello, World!\n');
+  });
+});
+```
+
+## Best Practices
+
+1. **Command naming**: Use descriptive, hyphenated names (`json-format`, not `jf`)
+2. **Exit codes**: Return `0` for success, `1` for errors, `130` for cancellation
+3. **Help text**: Show usage when called without required arguments
+4. **Error messages**: Write errors to `stderr`, data to `stdout`
+5. **Stdin support**: Accept input from pipes when appropriate
+6. **Environment variables**: Use `ctx.env` for configuration
+7. **Signal handling**: Check `ctx.signal.aborted` for long operations
+8. **Dependencies**: Use `lifo.import()` instead of bundling large libraries
+9. **Documentation**: Include README with examples
+10. **Versioning**: Follow semantic versioning
+
+## Package Metadata
+
+Full package.json structure:
+
+```json
+{
+  "name": "lifo-my-tools",
+  "version": "1.0.0",
+  "description": "My custom Lifo commands",
+  "author": "Your Name <email@example.com>",
+  "license": "MIT",
+  "keywords": ["lifo", "cli", "tools"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/user/lifo-my-tools"
+  },
+  "lifo": {
+    "commands": {
+      "my-cmd": "./src/index.js"
+    }
+  },
+  "files": [
+    "src/",
+    "README.md",
+    "LICENSE"
+  ]
+}
+```
+
+## Distribution
+
+### Via npm
+
+Publish to npm registry:
+
+```bash
+npm publish
+```
+
+Users install:
+
+```bash
+lifo install <package-name>
+```
+
+### Via Git
+
+Install directly from repository:
+
+```bash
+lifo install github:user/repo
+lifo install https://github.com/user/repo.git
+```
+
+### Local Development
+
+Link local package:
+
+```bash
+cd my-package
+npm link
+cd /path/to/lifo-project
+lifo install ../my-package
+```
+
+## Debugging
+
+Enable debug output:
+
+```bash
+export LIFO_DEBUG=1
+my-command --help
+```
+
+Add logging in your command:
+
+```javascript
+module.exports = async function(ctx, lifo) {
+  if (ctx.env.DEBUG) {
+    ctx.stderr.write(`Debug: CWD=${ctx.cwd}\n`);
+    ctx.stderr.write(`Debug: Args=${JSON.stringify(ctx.args)}\n`);
+  }
+  
+  // Command logic...
+};
+```
+
+See [Custom Commands](/advanced/custom-commands) for command development details, and [Virtual Providers](/advanced/virtual-providers) for creating virtual filesystems in packages.

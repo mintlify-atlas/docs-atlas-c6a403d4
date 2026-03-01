@@ -1,0 +1,175 @@
+---
+title: Commands Overview
+description: Complete reference of 60+ Unix commands implemented in Lifo
+---
+
+Lifo provides a comprehensive set of Unix commands organized into categories. All commands are fully functional within the browser-based terminal environment.
+
+## Command Categories
+
+### File System Commands
+
+File and directory manipulation commands for managing the virtual filesystem.
+
+| Command | Description |
+|---------|-------------|
+| `ls` | List directory contents |
+| `cat` | Concatenate and display files |
+| `cp` | Copy files and directories |
+| `mv` | Move or rename files |
+| `rm` | Remove files and directories |
+| `mkdir` | Create directories |
+| `rmdir` | Remove empty directories |
+| `touch` | Create empty files or update timestamps |
+| `ln` | Create links between files |
+| `stat` | Display file status information |
+| `find` | Search for files in directory hierarchy |
+| `tree` | Display directory tree structure |
+| `du` | Estimate file space usage |
+| `df` | Report filesystem disk space usage |
+| `chmod` | Change file permissions |
+| `chown` | Change file owner |
+| `file` | Determine file type |
+| `basename` | Strip directory from filename |
+| `dirname` | Extract directory from path |
+| `realpath` | Print resolved absolute path |
+| `mktemp` | Create temporary file or directory |
+
+### Text Processing Commands
+
+Tools for manipulating and analyzing text content.
+
+| Command | Description |
+|---------|-------------|
+| `grep` | Search text using patterns |
+| `sed` | Stream editor for text transformation |
+| `awk` | Pattern scanning and processing language |
+| `head` | Output first part of files |
+| `tail` | Output last part of files |
+| `sort` | Sort lines of text |
+| `uniq` | Report or filter repeated lines |
+| `wc` | Count lines, words, and characters |
+| `cut` | Remove sections from lines |
+| `tr` | Translate or delete characters |
+| `diff` | Compare files line by line |
+| `nl` | Number lines of files |
+| `rev` | Reverse lines characterwise |
+| `tac` | Concatenate and print files in reverse |
+| `seq` | Print numeric sequences |
+| `base64` | Base64 encode/decode |
+| `strings` | Print printable character sequences |
+| `nano` | Simple text editor |
+| `less` | File pager |
+
+### Network Commands
+
+Commands for making HTTP requests and network operations.
+
+| Command | Description |
+|---------|-------------|
+| `curl` | Transfer data from or to a server |
+| `wget` | Download files from the web |
+| `ping` | Test network connectivity |
+| `dig` | DNS lookup utility |
+
+### System Commands
+
+System information and process management utilities.
+
+| Command | Description |
+|---------|-------------|
+| `ps` | Report process status |
+| `top` | Display system processes |
+| `kill` | Terminate processes |
+| `env` | Display or set environment variables |
+| `uname` | Print system information |
+| `whoami` | Print current user |
+| `hostname` | Show or set system hostname |
+| `uptime` | Show system uptime |
+| `free` | Display memory usage |
+| `date` | Display or set date and time |
+| `cal` | Display calendar |
+| `bc` | Calculator |
+| `sleep` | Delay for specified time |
+| `watch` | Execute command periodically |
+| `which` | Locate command binary |
+| `man` | Display manual pages |
+| `help` | Display help information |
+| `node` | Execute JavaScript with Node.js |
+| `npm` | Node package manager |
+| `pkg` | Package manager for Lifo |
+| `sha256sum` | Compute SHA-256 hash |
+| `fastfetch` | Display system information |
+| `neofetch` | Display system information (alias) |
+| `sl` | Steam locomotive animation |
+| `lifo` | Lifo system command |
+| `logout` | Exit the shell |
+
+### Archive Commands
+
+File compression and archive utilities.
+
+| Command | Description |
+|---------|-------------|
+| `tar` | Archive utility |
+| `gzip` | Compress files |
+| `gunzip` | Decompress gzip files |
+| `zip` | Package and compress files |
+| `unzip` | Extract compressed zip files |
+
+### I/O Utilities
+
+Input/output manipulation tools.
+
+| Command | Description |
+|---------|-------------|
+| `tee` | Read from stdin and write to stdout and files |
+| `xargs` | Build and execute command lines |
+| `yes` | Output string repeatedly |
+| `printf` | Format and print data |
+
+## Command Features
+
+- **Full option support**: Most commands support standard Unix flags and options
+- **Pipe support**: Commands work seamlessly with pipes (`|`)
+- **Redirection**: Input/output redirection with `>`, `>>`, `<`
+- **Pattern matching**: Glob patterns and regular expressions
+- **Error handling**: Proper exit codes and error messages
+
+## Usage Examples
+
+Combine commands using pipes:
+
+```bash
+ls -l | grep \".txt\" | wc -l
+```
+
+Chain operations with redirection:
+
+```bash
+find . -name \"*.js\" > files.txt
+cat files.txt | xargs wc -l
+```
+
+Process text with multiple tools:
+
+```bash
+cat data.csv | cut -d',' -f2 | sort | uniq -c
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="File System" icon="folder" href="/commands/filesystem">
+    Explore file and directory commands
+  </Card>
+  <Card title="Text Processing" icon="file-lines" href="/commands/text-processing">
+    Learn text manipulation tools
+  </Card>
+  <Card title="Network" icon="network-wired" href="/commands/network">
+    Make HTTP requests and DNS queries
+  </Card>
+  <Card title="System" icon="server" href="/commands/system">
+    View system information and manage processes
+  </Card>
+</CardGroup>

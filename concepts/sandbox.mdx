@@ -1,0 +1,816 @@
+---
+title: Sandbox
+description: High-level API for embedding Lifo - batteries included
+---
+
+The `Sandbox` class is the recommended way to use Lifo. It provides a high-level, ergonomic API that orchestrates the Kernel, VFS, Shell, and Command Registry.
+
+## Quick Start
+
+```typescript
+import { Sandbox } from '@lifo/core';
+
+const sandbox = await Sandbox.create();
+
+// Run commands
+const { stdout } = await sandbox.commands.run('ls -la');
+console.log(stdout);
+
+// Filesystem operations
+await sandbox.fs.writeFile('/data.json', '{"x":42}');
+const data = await sandbox.fs.readFile('/data.json', 'utf8');
+
+// Access internals
+sandbox.kernel.vfs.stat('/data.json');
+sandbox.shell.getCwd();
+```
+
+## Class Definition
+
+```typescript
+export class Sandbox {
+  readonly commands: SandboxCommands;  // Command execution API
+  readonly fs: SandboxFs;              // Filesystem API
+  readonly env: Record<string, string>; // Environment variables
+  
+  // Power-user escape hatches
+  readonly kernel: Kernel;
+  readonly shell: Shell;
+  
+  // Current working directory
+  get cwd(): string;
+  set cwd(path: string);
+  
+  static async create(options?: SandboxOptions): Promise<Sandbox>
+  
+  // Native filesystem mounting (Node.js only)
+  mountNative(virtualPath: string, hostPath: string, options?: {...}): void
+  unmountNative(virtualPath: string): void
+  
+  // Visual mode (attach to terminal)
+  attach(terminal: ITerminal): void
+  detach(): void
+  
+  // Snapshots
+  async exportSnapshot(): Promise<Uint8Array>
+  async importSnapshot(data: Uint8Array): Promise<void>
+  
+  destroy(): void
+}
+```
+
+Location: `src/sandbox/Sandbox.ts:24`
+
+## Creation Options
+
+```typescript
+interface SandboxOptions {
+  // Initial working directory
+  cwd?: string;
+  
+  // Environment variables (merged with defaults)
+  env?: Record<string, string>;
+  
+  // Pre-populate files
+  files?: Record<string, string>;
+  
+  // Enable persistence (default: false for programmatic use)
+  persist?: boolean;
+  
+  // Visual mode: provide a terminal instance
+  terminal?: ITerminal;
+  
+  // Mount native filesystem directories (Node.js only)
+  mounts?: Array<{
+    virtualPath: string;
+    hostPath: string;
+    readOnly?: boolean;
+    fsModule?: NativeFsModule;
+  }>;
+}
+```
+
+See `src/sandbox/types.ts:1-18`.
+
+### Example: Headless Mode
+
+```typescript
+const sandbox = await Sandbox.create({
+  cwd: '/home/user/project',
+  files: {
+    '/home/user/project/README.md': '# My Project',
+    '/home/user/project/package.json': JSON.stringify({
+      name: 'my-app',
+      version: '1.0.0',
+    }),
+  },
+  env: {
+    NODE_ENV: 'development',
+  },
+});
+```
+
+### Example: Visual Mode
+
+```typescript
+import { Terminal } from 'xterm';
+import 'xterm/css/xterm.css';
+
+const terminal = new Terminal();
+terminal.open(document.getElementById('terminal'));
+
+const sandbox = await Sandbox.create({
+  terminal,
+  persist: true,  // Save filesystem to IndexedDB
+});
+
+// The terminal is now interactive, user can type commands
+```
+
+### Example: Native Filesystem Mounts
+
+```typescript
+// Node.js only
+import * as fs from 'node:fs';
+
+const sandbox = await Sandbox.create({
+  mounts: [
+    {
+      virtualPath: '/mnt/project',
+      hostPath: '/home/user/code/my-project',
+      readOnly: false,
+      fsModule: fs,  // Explicit fs module (required for bundlers)
+    },
+  ],
+});
+
+// Now all VFS operations under /mnt/project delegate to the host filesystem
+const content = await sandbox.fs.readFile('/mnt/project/package.json', 'utf8');
+```
+
+See [Native Filesystem Mounts](#native-filesystem-mounts) for details.
+
+## Boot Sequence
+
+When you call `Sandbox.create()`, the following happens:
+
+### Step 1: Create and Boot Kernel
+
+```typescript
+const kernel = new Kernel();
+await kernel.boot({ persist: options?.persist ?? false });
+```
+
+- Creates VFS
+- Loads persisted state (if enabled)
+- Initializes standard directories (`/bin`, `/etc`, `/home`, etc.)
+- Mounts virtual providers (`/proc`, `/dev`)
+- Sets up persistence watchers
+
+See `src/sandbox/Sandbox.ts:67-68`.
+
+### Step 2: Create Command Registry
+
+```typescript
+const registry = createDefaultRegistry();
+bootLifoPackages(kernel.vfs, registry);
+```
+
+Registers all built-in commands and scans `/usr/share/pkg/node_modules` for installed packages.
+
+See `src/sandbox/Sandbox.ts:71-72`.
+
+### Step 3: Pre-populate Files
+
+```typescript
+if (options?.files) {
+  for (const [path, content] of Object.entries(options.files)) {
+    ensureParentDirs(kernel.vfs, path);
+    kernel.vfs.writeFile(path, content);
+  }
+}
+```
+
+Creates directories as needed.
+
+See `src/sandbox/Sandbox.ts:75-80`.
+
+### Step 4: Setup Environment
+
+```typescript
+const defaultEnv = kernel.getDefaultEnv();
+const env = { ...defaultEnv, ...options?.env };
+if (options?.cwd) {
+  env.PWD = options.cwd;
+}
+```
+
+Merges default environment with user overrides.
+
+See `src/sandbox/Sandbox.ts:83-87`.
+
+### Step 5: Create Terminal
+
+```typescript
+let shellTerminal: ITerminal;
+
+if (options?.terminal) {
+  shellTerminal = options.terminal;  // Visual mode
+} else {
+  shellTerminal = new HeadlessTerminal();  // Programmatic mode
+}
+```
+
+Headless terminal silently captures output.
+
+See `src/sandbox/Sandbox.ts:90-104`.
+
+### Step 6: Create Shell
+
+```typescript
+const shell = new Shell(shellTerminal, kernel.vfs, registry, env);
+```
+
+See `src/sandbox/Sandbox.ts:107`.
+
+### Step 7: Register Factory Commands
+
+Some commands need access to runtime state:
+
+```typescript
+registry.register('ps', createPsCommand(jobTable));
+registry.register('top', createTopCommand(jobTable));
+registry.register('kill', createKillCommand(jobTable));
+registry.register('watch', createWatchCommand(registry));
+registry.register('help', createHelpCommand(registry));
+registry.register('node', createNodeCommand(kernel.portRegistry));
+registry.register('curl', createCurlCommand(kernel.portRegistry));
+registry.register('npm', createNpmCommand(registry, shellExecute));
+```
+
+See `src/sandbox/Sandbox.ts:110-130`.
+
+### Step 8: Source Configuration Files
+
+```typescript
+await shell.sourceFile('/etc/profile');
+await shell.sourceFile(env.HOME + '/.bashrc');
+```
+
+Runs shell initialization scripts.
+
+See `src/sandbox/Sandbox.ts:133-134`.
+
+### Step 9: Start Shell (Visual Mode Only)
+
+```typescript
+if (isVisual) {
+  shell.start();        // Enable interactive input handling
+  shellTerminal.focus();
+}
+```
+
+See `src/sandbox/Sandbox.ts:142-145`.
+
+### Step 10: Mount Native Filesystems
+
+```typescript
+if (options?.mounts) {
+  for (const mount of options.mounts) {
+    sandbox.mountNative(mount.virtualPath, mount.hostPath, {...});
+  }
+}
+```
+
+See `src/sandbox/Sandbox.ts:155-162`.
+
+## Commands API
+
+The `sandbox.commands` object provides command execution:
+
+```typescript
+interface SandboxCommands {
+  // Run a command and capture output
+  run(command: string, options?: RunOptions): Promise<RunResult>;
+  
+  // Check if a command exists
+  exists(name: string): Promise<boolean>;
+  
+  // List all available commands
+  list(): string[];
+}
+
+interface RunOptions {
+  cwd?: string;
+  env?: Record<string, string>;
+  stdin?: string;
+}
+
+interface RunResult {
+  stdout: string;
+  stderr: string;
+  exitCode: number;
+}
+```
+
+See `src/sandbox/types.ts:20-31` and `src/sandbox/SandboxCommands.ts`.
+
+### Example: Running Commands
+
+```typescript
+// Simple execution
+const { stdout, exitCode } = await sandbox.commands.run('ls -la');
+
+// With options
+const result = await sandbox.commands.run('node script.js', {
+  cwd: '/home/user/project',
+  env: { NODE_ENV: 'production' },
+  stdin: JSON.stringify({ input: 'data' }),
+});
+
+if (result.exitCode !== 0) {
+  console.error('Command failed:', result.stderr);
+}
+```
+
+### Example: Checking Command Existence
+
+```typescript
+if (await sandbox.commands.exists('git')) {
+  await sandbox.commands.run('git status');
+}
+```
+
+### Example: Listing Commands
+
+```typescript
+const commands = sandbox.commands.list();
+// ['ls', 'cat', 'grep', 'sed', 'awk', 'git', 'npm', 'node', ...]
+```
+
+## Filesystem API
+
+The `sandbox.fs` object provides filesystem operations:
+
+```typescript
+interface SandboxFs {
+  // File operations
+  readFile(path: string): Promise<Uint8Array>;
+  readFile(path: string, encoding: 'utf8'): Promise<string>;
+  writeFile(path: string, content: string | Uint8Array): Promise<void>;
+  appendFile(path: string, content: string | Uint8Array): Promise<void>;
+  unlink(path: string): Promise<void>;
+  rename(oldPath: string, newPath: string): Promise<void>;
+  exists(path: string): Promise<boolean>;
+  stat(path: string): Promise<Stat>;
+  
+  // Directory operations
+  mkdir(path: string, options?: { recursive?: boolean }): Promise<void>;
+  rmdir(path: string, options?: { recursive?: boolean }): Promise<void>;
+  readdir(path: string): Promise<Array<{ name: string; type: FileType }>>;
+  
+  // Snapshots
+  exportSnapshot(): Promise<Uint8Array>;
+  importSnapshot(data: Uint8Array): Promise<void>;
+}
+```
+
+See `src/sandbox/types.ts:33-52` and `src/sandbox/SandboxFs.ts`.
+
+**Note:** All methods are async (return promises) even though the underlying VFS is synchronous. This provides a consistent API and allows for future async implementations.
+
+### Example: Reading Files
+
+```typescript
+// Binary read
+const bytes = await sandbox.fs.readFile('/image.png');
+
+// Text read
+const text = await sandbox.fs.readFile('/README.md', 'utf8');
+
+// JSON read
+const data = JSON.parse(
+  await sandbox.fs.readFile('/data.json', 'utf8')
+);
+```
+
+### Example: Writing Files
+
+```typescript
+// Text write
+await sandbox.fs.writeFile('/hello.txt', 'Hello, world!');
+
+// Binary write
+await sandbox.fs.writeFile('/data.bin', new Uint8Array([0x00, 0xFF]));
+
+// JSON write
+await sandbox.fs.writeFile(
+  '/config.json',
+  JSON.stringify({ theme: 'dark' }, null, 2)
+);
+```
+
+### Example: Directory Operations
+
+```typescript
+// Create directory (recursive)
+await sandbox.fs.mkdir('/path/to/nested/dir', { recursive: true });
+
+// List directory
+const entries = await sandbox.fs.readdir('/home/user');
+for (const entry of entries) {
+  console.log(entry.name, entry.type);
+}
+
+// Remove directory (recursive)
+await sandbox.fs.rmdir('/old/dir', { recursive: true });
+```
+
+### Example: Checking Existence
+
+```typescript
+if (await sandbox.fs.exists('/config.json')) {
+  const config = await sandbox.fs.readFile('/config.json', 'utf8');
+  // ...
+}
+```
+
+### Example: Getting Stats
+
+```typescript
+const stat = await sandbox.fs.stat('/data.json');
+console.log('Size:', stat.size);
+console.log('Modified:', new Date(stat.mtime));
+console.log('Type:', stat.type);  // 'file' | 'directory'
+```
+
+## Environment Variables
+
+```typescript
+// Read
+console.log(sandbox.env.HOME);  // /home/user
+
+// Write
+sandbox.env.DEBUG = '1';
+
+// Used by commands
+const { stdout } = await sandbox.commands.run('echo $DEBUG');
+// stdout: "1\n"
+```
+
+Changes to `sandbox.env` affect subsequent command execution.
+
+## Current Working Directory
+
+```typescript
+// Read
+console.log(sandbox.cwd);  // /home/user
+
+// Write
+sandbox.cwd = '/tmp';
+
+// Used by commands
+await sandbox.commands.run('pwd');
+// stdout: "/tmp\n"
+```
+
+## Native Filesystem Mounts
+
+Sandbox supports mounting real host directories into the VFS (Node.js/Deno/Bun only):
+
+```typescript
+sandbox.mountNative('/mnt/project', '/home/user/code/my-project', {
+  readOnly: false,
+});
+
+// Now all VFS operations delegate to the host filesystem
+const pkg = await sandbox.fs.readFile('/mnt/project/package.json', 'utf8');
+await sandbox.fs.writeFile('/mnt/project/output.txt', 'result');
+
+// Commands also work
+await sandbox.commands.run('ls /mnt/project');
+await sandbox.commands.run('git status', { cwd: '/mnt/project' });
+```
+
+See `src/sandbox/Sandbox.ts:179-209`.
+
+### How It Works
+
+1. `mountNative()` creates a `NativeFsProvider`
+2. The provider wraps Node.js `fs` module
+3. All VFS operations under `/mnt/project` delegate to the provider
+4. The provider translates VFS calls to `fs.readFileSync()`, etc.
+5. Paths are resolved relative to the host path
+
+See `src/kernel/vfs/providers/NativeFsProvider.ts`.
+
+### Read-Only Mounts
+
+```typescript
+sandbox.mountNative('/data', '/host/readonly-data', {
+  readOnly: true,
+});
+
+// Reads work
+const data = await sandbox.fs.readFile('/data/file.txt', 'utf8');
+
+// Writes fail
+await sandbox.fs.writeFile('/data/output.txt', 'test');
+// Error: read-only filesystem
+```
+
+### Custom fs Module (for Bundlers)
+
+Bundlers (webpack, esbuild) don't handle dynamic `require()`. Provide the fs module explicitly:
+
+```typescript
+import * as fs from 'node:fs';
+
+sandbox.mountNative('/project', '/host/path', {
+  fsModule: fs,
+});
+```
+
+### Unmounting
+
+```typescript
+sandbox.unmountNative('/mnt/project');
+
+// Now /mnt/project is back to the in-memory VFS
+```
+
+## Snapshots
+
+Snapshots allow exporting/importing the entire filesystem as a tar.gz archive:
+
+### Exporting
+
+```typescript
+const snapshot = await sandbox.exportSnapshot();
+// Uint8Array (gzip-compressed tar)
+
+// Save to file (Node.js)
+fs.writeFileSync('snapshot.tar.gz', snapshot);
+
+// Download in browser
+const blob = new Blob([snapshot], { type: 'application/gzip' });
+const url = URL.createObjectURL(blob);
+const a = document.createElement('a');
+a.href = url;
+a.download = 'lifo-snapshot.tar.gz';
+a.click();
+```
+
+### Importing
+
+```typescript
+// Load from file (Node.js)
+const snapshot = fs.readFileSync('snapshot.tar.gz');
+await sandbox.importSnapshot(snapshot);
+
+// Upload in browser
+const input = document.createElement('input');
+input.type = 'file';
+input.onchange = async (e) => {
+  const file = e.target.files[0];
+  const buffer = await file.arrayBuffer();
+  await sandbox.importSnapshot(new Uint8Array(buffer));
+};
+input.click();
+```
+
+See `src/sandbox/SandboxFs.ts:150-167`.
+
+<Info>
+Snapshots are useful for distributing pre-configured environments, backing up work, or migrating between devices.
+</Info>
+
+## Visual Mode (Terminal Attachment)
+
+A headless sandbox can be attached to a terminal later:
+
+```typescript
+// Create headless
+const sandbox = await Sandbox.create();
+
+// Later: attach to terminal
+const terminal = new Terminal();
+terminal.open(document.getElementById('terminal'));
+sandbox.attach(terminal);
+
+// The terminal is now interactive
+```
+
+See `src/sandbox/Sandbox.ts:224-230`.
+
+**Current limitations:**
+
+- `attach()` displays the MOTD but doesn't fully integrate with the shell
+- Interactive input requires creating with `terminal` option
+- `detach()` is a no-op placeholder
+
+Full hot-attach/detach is planned for a future release.
+
+## Lifecycle Management
+
+### Destroying a Sandbox
+
+```typescript
+sandbox.destroy();
+
+// Future operations will throw
+try {
+  await sandbox.commands.run('ls');
+} catch (e) {
+  console.error('Sandbox is destroyed');
+}
+```
+
+See `src/sandbox/Sandbox.ts:256-258`.
+
+**What `destroy()` does:**
+
+- Sets internal `_destroyed` flag
+- Future operations throw errors
+- Does NOT clean up kernel/VFS (manual cleanup if needed)
+
+### Resource Cleanup
+
+For long-running applications, consider:
+
+```typescript
+// Clear command history
+sandbox.shell.getJobTable().list().forEach(job => {
+  job.abortController.abort();
+});
+
+// Unmount native filesystems
+sandbox.unmountNative('/mnt/project');
+
+// Destroy sandbox
+sandbox.destroy();
+```
+
+## Advanced: Direct Kernel/Shell Access
+
+For power users, the Sandbox exposes the underlying components:
+
+```typescript
+// Direct VFS access
+sandbox.kernel.vfs.writeFile('/file.txt', 'data');
+const root = sandbox.kernel.vfs.getRoot();
+
+// Direct shell access
+sandbox.shell.tokenize('ls -la');
+const cwd = sandbox.shell.getCwd();
+
+// Port registry
+sandbox.kernel.portRegistry.set(8080, (req, res) => {
+  res.statusCode = 200;
+  res.body = 'Hello!';
+});
+```
+
+<Note>
+Direct access bypasses the promise-based Sandbox API. Only use for advanced use cases.
+</Note>
+
+## Error Handling
+
+### Command Errors
+
+```typescript
+const result = await sandbox.commands.run('invalid-command');
+if (result.exitCode !== 0) {
+  console.error('Command failed:', result.stderr);
+  // stderr: "invalid-command: command not found\n"
+}
+```
+
+### Filesystem Errors
+
+```typescript
+try {
+  await sandbox.fs.readFile('/nonexistent.txt', 'utf8');
+} catch (e) {
+  if (e instanceof VFSError && e.code === 'ENOENT') {
+    console.error('File not found');
+  }
+}
+```
+
+### Mount Errors
+
+```typescript
+try {
+  sandbox.mountNative('/mnt/project', '/invalid/path');
+} catch (e) {
+  console.error('Mount failed:', e.message);
+}
+```
+
+## Performance Considerations
+
+### Command Execution Overhead
+
+Each `sandbox.commands.run()` call:
+
+- Parses the command (~1ms)
+- Sets up streams (~0.5ms)
+- Executes command (varies)
+- Captures output (negligible)
+
+**Tip:** For many simple operations, use `sandbox.fs` instead:
+
+```typescript
+// ❌ Slower
+for (const file of files) {
+  await sandbox.commands.run(`cat ${file}`);
+}
+
+// ✅ Faster
+for (const file of files) {
+  await sandbox.fs.readFile(file, 'utf8');
+}
+```
+
+### Filesystem Performance
+
+The VFS is in-memory, so operations are fast:
+
+- File read/write: ~0.01-0.1ms
+- Directory listing: ~0.1ms
+- Large files (≥1MB): ~1-10ms (chunking overhead)
+
+**Tip:** For large batch operations, use the underlying VFS directly:
+
+```typescript
+const vfs = sandbox.kernel.vfs;
+for (let i = 0; i < 10000; i++) {
+  vfs.writeFile(`/file${i}.txt`, `data ${i}`);
+}
+```
+
+## Complete Example
+
+```typescript
+import { Sandbox } from '@lifo/core';
+import * as fs from 'node:fs';
+
+async function main() {
+  // Create sandbox with native mount
+  const sandbox = await Sandbox.create({
+    cwd: '/project',
+    files: {
+      '/project/README.md': '# My Project\nBuilt with Lifo',
+    },
+    mounts: [
+      {
+        virtualPath: '/host',
+        hostPath: process.cwd(),
+        fsModule: fs,
+      },
+    ],
+  });
+
+  // Run commands
+  console.log('\n=== Project Files ===');
+  const { stdout } = await sandbox.commands.run('ls -la /project');
+  console.log(stdout);
+
+  // Filesystem operations
+  console.log('\n=== README Content ===');
+  const readme = await sandbox.fs.readFile('/project/README.md', 'utf8');
+  console.log(readme);
+
+  // Create a script and run it
+  await sandbox.fs.writeFile('/project/hello.sh', `
+#!/bin/sh
+echo "Hello from Lifo!"
+echo "CWD: $(pwd)"
+echo "Files: $(ls -1 | wc -l)"
+`.trim());
+
+  console.log('\n=== Running Script ===');
+  const result = await sandbox.commands.run('sh /project/hello.sh');
+  console.log(result.stdout);
+
+  // Export snapshot
+  console.log('\n=== Creating Snapshot ===');
+  const snapshot = await sandbox.exportSnapshot();
+  console.log(`Snapshot size: ${snapshot.length} bytes`);
+  fs.writeFileSync('snapshot.tar.gz', snapshot);
+
+  // Cleanup
+  sandbox.destroy();
+}
+
+main().catch(console.error);
+```
+
+## Related
+
+- [Quick Start](/quickstart) - Getting started with Sandbox
+- [Architecture](/concepts/architecture) - How Sandbox fits in the system
+- [Kernel](/concepts/kernel) - Lower-level kernel API
+- [Shell](/concepts/shell) - Shell implementation details

@@ -1,0 +1,341 @@
+---
+title: 'Kernel'
+description: 'Core system management and virtual filesystem coordination'
+---
+
+## Overview
+
+The `Kernel` class manages the core system components: the virtual filesystem (VFS), persistence layer, and virtual port registry for network requests. It's responsible for booting the system and initializing the standard directory structure.
+
+## Creating a Kernel
+
+```typescript
+import { Kernel } from '@lifo/core';
+
+const kernel = new Kernel();
+await kernel.boot({ persist: true });
+```
+
+## Constructor
+
+```typescript
+constructor(backend?: PersistenceBackend)
+```
+
+<ParamField path="backend" type="PersistenceBackend" optional>
+  Custom persistence backend. Defaults to IndexedDBPersistenceBackend.
+</ParamField>
+
+**Example:**
+
+```typescript
+import { Kernel, IndexedDBPersistenceBackend } from '@lifo/core';
+
+const kernel = new Kernel(new IndexedDBPersistenceBackend());
+```
+
+## Instance Properties
+
+### vfs
+
+The virtual filesystem instance.
+
+```typescript
+vfs: VFS
+```
+
+See [VFS](/api/vfs) for full API documentation.
+
+**Example:**
+
+```typescript
+const kernel = new Kernel();
+await kernel.boot();
+
+kernel.vfs.writeFile('/home/user/test.txt', 'Hello');
+const content = kernel.vfs.readFileString('/home/user/test.txt');
+```
+
+### portRegistry
+
+Registry mapping virtual ports to request handlers for network operations.
+
+```typescript
+portRegistry: Map<number, VirtualRequestHandler>
+```
+
+**Example:**
+
+```typescript
+// Register a virtual HTTP server on port 3000
+kernel.portRegistry.set(3000, (req, res) => {
+  res.statusCode = 200;
+  res.headers['content-type'] = 'application/json';
+  res.body = JSON.stringify({ message: 'Hello from virtual server!' });
+});
+
+// Now commands like `curl http://localhost:3000` will hit this handler
+```
+
+## Instance Methods
+
+### boot()
+
+Boot the kernel. Loads persisted filesystem, initializes standard directories, registers virtual providers, and sets up filesystem watch hooks.
+
+```typescript
+async boot(options?: { persist?: boolean }): Promise<void>
+```
+
+<ParamField path="options" type="object" optional>
+  <Expandable title="properties">
+    <ParamField path="persist" type="boolean" default="true">
+      Enable IndexedDB persistence. If true, loads saved filesystem on boot and saves changes automatically.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+**Example:**
+
+```typescript
+const kernel = new Kernel();
+
+// Boot with persistence (default)
+await kernel.boot({ persist: true });
+
+// Boot without persistence (ephemeral filesystem)
+await kernel.boot({ persist: false });
+```
+
+**Boot sequence:**
+
+1. If persistence is enabled, load saved filesystem from IndexedDB
+2. Initialize standard directory structure (`/bin`, `/etc`, `/home/user`, etc.)
+3. Register virtual providers (`/proc`, `/dev`)
+4. If persistence is enabled, set up automatic save on filesystem changes
+
+### initFilesystem()
+
+Initialize standard Unix-like directory structure and system files. Called automatically by `boot()`.
+
+```typescript
+initFilesystem(): void
+```
+
+Creates the following directories:
+
+- `/bin` - System binaries
+- `/etc` - Configuration files
+- `/home` - User home directories
+- `/home/user` - Default user home
+- `/tmp` - Temporary files
+- `/var` - Variable data
+- `/var/log` - Log files
+- `/usr` - User programs
+- `/usr/bin` - User binaries
+- `/usr/share` - Shared data
+- `/usr/share/pkg` - Package data
+- `/usr/share/pkg/node_modules` - Node.js packages
+
+Writes system files:
+
+- `/etc/motd` - Message of the day (shown on shell startup)
+- `/etc/hostname` - System hostname (`lifo`)
+- `/etc/profile` - System-wide environment setup
+- `/home/user/.liforc` - User shell configuration (aliases, environment)
+
+**Example:**
+
+```typescript
+const kernel = new Kernel();
+kernel.initFilesystem();
+
+// Standard directories now exist
+console.log(kernel.vfs.exists('/home/user')); // true
+console.log(kernel.vfs.exists('/tmp')); // true
+```
+
+### getDefaultEnv()
+
+Get default environment variables for the system.
+
+```typescript
+getDefaultEnv(): Record<string, string>
+```
+
+<ResponseField name="env" type="Record<string, string>">
+  Default environment variables
+  
+  <Expandable title="variables">
+    <ResponseField name="HOME" type="string">
+      User home directory: `/home/user`
+    </ResponseField>
+    
+    <ResponseField name="USER" type="string">
+      Username: `user`
+    </ResponseField>
+    
+    <ResponseField name="HOSTNAME" type="string">
+      System hostname: `lifo`
+    </ResponseField>
+    
+    <ResponseField name="SHELL" type="string">
+      Shell path: `/bin/sh`
+    </ResponseField>
+    
+    <ResponseField name="PATH" type="string">
+      Command search path: `/usr/bin:/bin`
+    </ResponseField>
+    
+    <ResponseField name="TERM" type="string">
+      Terminal type: `xterm-256color`
+    </ResponseField>
+    
+    <ResponseField name="PWD" type="string">
+      Current working directory: `/home/user`
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+**Example:**
+
+```typescript
+const kernel = new Kernel();
+const env = kernel.getDefaultEnv();
+
+console.log(env.HOME); // '/home/user'
+console.log(env.PATH); // '/usr/bin:/bin'
+console.log(env.TERM); // 'xterm-256color'
+```
+
+## Type Definitions
+
+### VirtualRequest
+
+```typescript
+interface VirtualRequest {
+  method: string;              // HTTP method (GET, POST, etc.)
+  url: string;                 // Request URL
+  headers: Record<string, string>;
+  body: string;                // Request body
+}
+```
+
+### VirtualResponse
+
+```typescript
+interface VirtualResponse {
+  statusCode: number;          // HTTP status code
+  headers: Record<string, string>;
+  body: string;                // Response body
+}
+```
+
+### VirtualRequestHandler
+
+```typescript
+type VirtualRequestHandler = (
+  req: VirtualRequest,
+  res: VirtualResponse
+) => void;
+```
+
+## Virtual Providers
+
+The kernel automatically registers virtual filesystem providers during boot:
+
+### /proc
+
+Provides runtime process information (read-only).
+
+**Available files:**
+
+- `/proc/uptime` - System uptime in seconds
+- `/proc/version` - Kernel version information
+- `/proc/meminfo` - Memory usage statistics
+
+**Example:**
+
+```typescript
+const kernel = new Kernel();
+await kernel.boot();
+
+const uptime = kernel.vfs.readFileString('/proc/uptime');
+console.log('System uptime:', uptime);
+```
+
+### /dev
+
+Provides device files (read-only).
+
+**Available files:**
+
+- `/dev/null` - Null device (always empty)
+- `/dev/zero` - Zero device (infinite zeros)
+- `/dev/random` - Random data generator
+- `/dev/urandom` - Random data generator (same as /dev/random)
+
+**Example:**
+
+```typescript
+const random = kernel.vfs.readFile('/dev/random');
+console.log('Random bytes:', random.slice(0, 16));
+```
+
+## Persistence
+
+When persistence is enabled, the kernel automatically:
+
+1. **On boot:** Loads the saved filesystem from IndexedDB
+2. **On change:** Debounces and saves filesystem changes to IndexedDB
+
+**Example:**
+
+```typescript
+// Session 1: Create file with persistence enabled
+const kernel1 = new Kernel();
+await kernel1.boot({ persist: true });
+kernel1.vfs.writeFile('/home/user/important.txt', 'My data');
+
+// Session 2: Data persists across page reloads
+const kernel2 = new Kernel();
+await kernel2.boot({ persist: true });
+const data = kernel2.vfs.readFileString('/home/user/important.txt');
+console.log(data); // 'My data'
+```
+
+## Usage with Sandbox
+
+The `Kernel` is typically created and managed by the `Sandbox` class. Direct kernel access is provided as a power-user escape hatch:
+
+```typescript
+const sandbox = await Sandbox.create();
+
+// Access kernel directly
+const kernel = sandbox.kernel;
+
+// Register a virtual server
+kernel.portRegistry.set(8080, (req, res) => {
+  res.statusCode = 200;
+  res.body = 'Hello!';
+});
+
+// Access VFS directly
+kernel.vfs.mkdir('/custom');
+kernel.vfs.writeFile('/custom/data.txt', 'Direct access');
+```
+
+## Source Location
+
+```typescript
+// src/kernel/index.ts
+export class Kernel {
+  vfs: VFS;
+  portRegistry: Map<number, VirtualRequestHandler>;
+  
+  constructor(backend?: PersistenceBackend);
+  async boot(options?: { persist?: boolean }): Promise<void>;
+  initFilesystem(): void;
+  getDefaultEnv(): Record<string, string>;
+}
+```

@@ -1,0 +1,233 @@
+---
+title: Creating a Sandbox
+description: Learn how to create and configure a Lifo sandbox with various options
+---
+
+The `Sandbox` class is the main entry point for working with Lifo. It orchestrates all boot steps including the kernel, VFS, command registry, and shell.
+
+## Basic Usage
+
+<Steps>
+  <Step title="Create a headless sandbox">
+    The simplest way to create a sandbox is with no options:
+
+    ```typescript
+    import { Sandbox } from '@lifo/core';
+
+    const sandbox = await Sandbox.create();
+
+    // Default working directory is /home/user
+    console.log(sandbox.cwd); // "/home/user"
+    ```
+
+    This creates a headless sandbox suitable for programmatic use.
+  </Step>
+
+  <Step title="Configure sandbox options">
+    You can customize the sandbox with various options:
+
+    ```typescript
+    const sandbox = await Sandbox.create({
+      // Enable IndexedDB persistence (default: false)
+      persist: true,
+
+      // Set initial working directory
+      cwd: '/tmp',
+
+      // Add custom environment variables
+      env: {
+        EDITOR: 'vim',
+        MY_VAR: 'custom-value'
+      },
+
+      // Pre-populate files
+      files: {
+        '/home/user/config.json': JSON.stringify({ key: 'value' }),
+        '/home/user/script.sh': '#!/bin/sh\necho "Hello"'
+      }
+    });
+    ```
+  </Step>
+
+  <Step title="Access sandbox properties">
+    The sandbox provides several key properties:
+
+    ```typescript
+    // Programmatic command execution
+    const result = await sandbox.commands.run('ls -la');
+
+    // Filesystem operations
+    await sandbox.fs.writeFile('/tmp/test.txt', 'content');
+
+    // Environment variables (merged with defaults)
+    console.log(sandbox.env.HOME); // "/home/user"
+
+    // Current working directory (read/write)
+    sandbox.cwd = '/etc';
+    console.log(sandbox.cwd); // "/etc"
+    ```
+  </Step>
+
+  <Step title="Clean up resources">
+    When you're done, destroy the sandbox to release resources:
+
+    ```typescript
+    sandbox.destroy();
+    ```
+  </Step>
+</Steps>
+
+## Visual Mode with Terminal
+
+For interactive terminal use, pass an `ITerminal` instance:
+
+```typescript
+import { Sandbox } from '@lifo/core';
+import { Terminal } from '@xterm/xterm';
+
+const term = new Terminal({
+  cols: 80,
+  rows: 24,
+  theme: {
+    background: '#1e1e1e',
+    foreground: '#d4d4d4'
+  }
+});
+
+term.open(document.getElementById('terminal'));
+
+const sandbox = await Sandbox.create({
+  terminal: term // Enables visual/interactive mode
+});
+```
+
+In visual mode:
+- The MOTD (message of the day) is displayed automatically
+- The shell starts and accepts interactive input
+- Users can type commands directly
+
+## Pre-populating Files
+
+You can pre-populate files with nested paths. Parent directories are created automatically:
+
+```typescript
+const sandbox = await Sandbox.create({
+  files: {
+    '/home/user/project/package.json': JSON.stringify({
+      name: 'my-app',
+      version: '1.0.0'
+    }),
+    '/home/user/project/src/index.js': 'console.log("Hello");',
+    '/home/user/deep/nested/file.txt': 'nested content'
+  }
+});
+
+// Files are ready to use immediately
+const content = await sandbox.fs.readFile('/home/user/project/package.json');
+```
+
+## Native Filesystem Mounts
+
+In Node.js environments, you can mount native filesystem directories into the virtual filesystem:
+
+```typescript
+const sandbox = await Sandbox.create({
+  mounts: [
+    {
+      virtualPath: '/mnt/project',
+      hostPath: '/home/user/my-project',
+      readOnly: false
+    },
+    {
+      virtualPath: '/mnt/readonly',
+      hostPath: '/usr/share/data',
+      readOnly: true
+    }
+  ]
+});
+
+// Now you can access host files through the VFS
+const hostFile = await sandbox.fs.readFile('/mnt/project/README.md');
+```
+
+<Warning>
+  Native mounts only work in Node.js environments. In browsers, all filesystem operations use the in-memory VFS.
+</Warning>
+
+You can also mount/unmount at runtime:
+
+```typescript
+// Mount at runtime (Node.js only)
+sandbox.mountNative('/mnt/data', '/path/on/host');
+
+// Unmount when done
+sandbox.unmountNative('/mnt/data');
+```
+
+## Power-user APIs
+
+For advanced use cases, the sandbox exposes lower-level APIs:
+
+```typescript
+// Direct access to kernel and VFS
+sandbox.kernel.vfs.readFile('/etc/hostname');
+
+// Direct shell access
+await sandbox.shell.execute('echo $PATH');
+
+// Port registry for virtual networking
+sandbox.kernel.portRegistry.set(8080, (req, res) => {
+  res.statusCode = 200;
+  res.body = 'Hello from virtual server';
+});
+```
+
+<Warning>
+  These APIs are escape hatches for advanced scenarios. Most applications should use `sandbox.fs` and `sandbox.commands` instead.
+</Warning>
+
+## Complete Example
+
+Here's a complete example that demonstrates common patterns:
+
+```typescript
+import { Sandbox } from '@lifo/core';
+
+async function main() {
+  // Create configured sandbox
+  const sandbox = await Sandbox.create({
+    cwd: '/home/user/project',
+    env: { NODE_ENV: 'production' },
+    files: {
+      '/home/user/project/app.js': `
+        const fs = require('fs');
+        console.log('Running from:', process.cwd());
+        console.log('NODE_ENV:', process.env.NODE_ENV);
+      `
+    }
+  });
+
+  try {
+    // Run commands
+    const { stdout, exitCode } = await sandbox.commands.run('node app.js');
+    console.log('Output:', stdout);
+    console.log('Exit code:', exitCode);
+
+    // Manipulate files
+    await sandbox.fs.writeFile('output.txt', stdout);
+
+    // Check results
+    const exists = await sandbox.fs.exists('output.txt');
+    console.log('Output saved:', exists);
+  } finally {
+    // Always clean up
+    sandbox.destroy();
+  }
+}
+
+main().catch(console.error);
+```
+
+## API Reference
+
+See the [Sandbox API reference](/api-reference/sandbox) for complete details on all options and methods.

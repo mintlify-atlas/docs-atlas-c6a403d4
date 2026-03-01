@@ -1,0 +1,319 @@
+---
+title: File Operations
+description: Work with files and directories using the sandbox filesystem API
+---
+
+## Reading Files
+
+### Read Text File
+
+```typescript
+const sandbox = await Sandbox.create();
+
+await sandbox.fs.writeFile('/tmp/test.txt', 'hello world');
+const content = await sandbox.fs.readFile('/tmp/test.txt');
+
+console.log(content); // "hello world"
+```
+
+### Read Binary File
+
+```typescript
+const data = new Uint8Array([72, 101, 108, 108, 111]); // "Hello"
+await sandbox.fs.writeFile('/tmp/bin.dat', data);
+
+const result = await sandbox.fs.readFile('/tmp/bin.dat', null);
+console.log(result); // Uint8Array(5) [ 72, 101, 108, 108, 111 ]
+console.log(result[0]); // 72
+```
+
+## Writing Files
+
+### Write Single File
+
+```typescript
+await sandbox.fs.writeFile('/tmp/message.txt', 'Hello, World!');
+
+const content = await sandbox.fs.readFile('/tmp/message.txt');
+console.log(content); // "Hello, World!"
+```
+
+### Write Multiple Files
+
+Batch write for better performance:
+
+```typescript
+await sandbox.fs.writeFiles([
+  { path: '/tmp/f1.txt', content: 'file 1' },
+  { path: '/tmp/f2.txt', content: 'file 2' },
+  { path: '/tmp/f3.txt', content: 'file 3' },
+]);
+
+const f1 = await sandbox.fs.readFile('/tmp/f1.txt');
+const f2 = await sandbox.fs.readFile('/tmp/f2.txt');
+const f3 = await sandbox.fs.readFile('/tmp/f3.txt');
+
+console.log(f1); // "file 1"
+console.log(f2); // "file 2"
+console.log(f3); // "file 3"
+```
+
+## Listing Directories
+
+### Basic Directory Listing
+
+```typescript
+const sandbox = await Sandbox.create();
+
+await sandbox.fs.writeFile('/tmp/a.txt', 'a');
+await sandbox.fs.writeFile('/tmp/b.txt', 'b');
+
+const entries = await sandbox.fs.readdir('/tmp');
+const names = entries.map((e) => e.name);
+
+console.log(names); // ['a.txt', 'b.txt']
+```
+
+### Get Entry Types
+
+```typescript
+await sandbox.fs.writeFile('/tmp/file.txt', 'content');
+await sandbox.fs.mkdir('/tmp/subdir');
+
+const entries = await sandbox.fs.readdir('/tmp');
+
+for (const entry of entries) {
+  console.log(`${entry.name}: ${entry.type}`);
+}
+// Output:
+// file.txt: file
+// subdir: directory
+```
+
+## File Stats
+
+### Get File Information
+
+```typescript
+await sandbox.fs.writeFile('/tmp/stat-test.txt', 'hello');
+
+const stats = await sandbox.fs.stat('/tmp/stat-test.txt');
+console.log(stats.type);  // "file"
+console.log(stats.size);  // 5
+console.log(stats.mtime); // 1234567890123 (timestamp)
+```
+
+### Check Directory Stats
+
+```typescript
+const stats = await sandbox.fs.stat('/tmp');
+console.log(stats.type); // "directory"
+```
+
+## Creating Directories
+
+### Single Directory
+
+```typescript
+await sandbox.fs.mkdir('/tmp/newdir');
+
+const stats = await sandbox.fs.stat('/tmp/newdir');
+console.log(stats.type); // "directory"
+```
+
+### Nested Directories
+
+Create parent directories automatically:
+
+```typescript
+await sandbox.fs.mkdir('/tmp/a/b/c', { recursive: true });
+
+const exists = await sandbox.fs.exists('/tmp/a/b/c');
+console.log(exists); // true
+```
+
+## Deleting Files
+
+### Remove File
+
+```typescript
+await sandbox.fs.writeFile('/tmp/delete-me.txt', 'content');
+console.log(await sandbox.fs.exists('/tmp/delete-me.txt')); // true
+
+await sandbox.fs.rm('/tmp/delete-me.txt');
+console.log(await sandbox.fs.exists('/tmp/delete-me.txt')); // false
+```
+
+### Remove Directory Recursively
+
+```typescript
+await sandbox.fs.mkdir('/tmp/rmdir-test');
+await sandbox.fs.writeFile('/tmp/rmdir-test/file.txt', 'content');
+
+await sandbox.fs.rm('/tmp/rmdir-test', { recursive: true });
+console.log(await sandbox.fs.exists('/tmp/rmdir-test')); // false
+```
+
+## Checking Existence
+
+```typescript
+const sandbox = await Sandbox.create();
+
+console.log(await sandbox.fs.exists('/home/user'));    // true
+console.log(await sandbox.fs.exists('/nonexistent'));  // false
+```
+
+## Moving/Renaming Files
+
+### Rename File
+
+```typescript
+await sandbox.fs.writeFile('/tmp/old.txt', 'content');
+await sandbox.fs.rename('/tmp/old.txt', '/tmp/new.txt');
+
+console.log(await sandbox.fs.exists('/tmp/old.txt')); // false
+
+const content = await sandbox.fs.readFile('/tmp/new.txt');
+console.log(content); // "content"
+```
+
+## Copying Files
+
+### Copy Single File
+
+```typescript
+await sandbox.fs.writeFile('/tmp/src.txt', 'copy me');
+await sandbox.fs.cp('/tmp/src.txt', '/tmp/dest.txt');
+
+const dest = await sandbox.fs.readFile('/tmp/dest.txt');
+const src = await sandbox.fs.readFile('/tmp/src.txt');
+
+console.log(dest); // "copy me"
+console.log(src);  // "copy me" (original still exists)
+```
+
+## Using Shell Commands
+
+You can also use familiar shell commands:
+
+<CodeGroup>
+
+```typescript Filesystem API
+// Using the filesystem API
+const files = await sandbox.fs.readdir('/tmp');
+console.log(files.map(f => f.name));
+```
+
+```typescript Shell Commands
+// Using shell commands
+const result = await sandbox.commands.run('ls /tmp');
+console.log(result.stdout);
+```
+
+</CodeGroup>
+
+### Common File Commands
+
+<CodeGroup>
+
+```typescript ls - List Files
+const result = await sandbox.commands.run('ls -la /tmp');
+console.log(result.stdout);
+// Output: detailed file listing with permissions
+```
+
+```typescript cat - Read Files
+await sandbox.commands.run('echo "content" > /tmp/file.txt');
+
+const result = await sandbox.commands.run('cat /tmp/file.txt');
+console.log(result.stdout); // "content\n"
+```
+
+```typescript mkdir - Create Directories
+await sandbox.commands.run('mkdir -p /tmp/a/b/c');
+
+const exists = await sandbox.fs.exists('/tmp/a/b/c');
+console.log(exists); // true
+```
+
+```typescript rm - Remove Files
+await sandbox.commands.run('touch /tmp/delete.txt');
+await sandbox.commands.run('rm /tmp/delete.txt');
+
+const exists = await sandbox.fs.exists('/tmp/delete.txt');
+console.log(exists); // false
+```
+
+```typescript cp - Copy Files
+await sandbox.commands.run('echo "data" > /tmp/source.txt');
+await sandbox.commands.run('cp /tmp/source.txt /tmp/dest.txt');
+
+const result = await sandbox.commands.run('cat /tmp/dest.txt');
+console.log(result.stdout); // "data\n"
+```
+
+```typescript mv - Move Files
+await sandbox.commands.run('echo "data" > /tmp/old.txt');
+await sandbox.commands.run('mv /tmp/old.txt /tmp/new.txt');
+
+console.log(await sandbox.fs.exists('/tmp/old.txt')); // false
+console.log(await sandbox.fs.exists('/tmp/new.txt')); // true
+```
+
+```typescript touch - Create Empty Files
+await sandbox.commands.run('touch /tmp/newfile');
+
+const exists = await sandbox.fs.exists('/tmp/newfile');
+console.log(exists); // true
+
+const content = await sandbox.fs.readFile('/tmp/newfile');
+console.log(content); // "" (empty)
+```
+
+</CodeGroup>
+
+## Complete Example
+
+```typescript
+import { Sandbox } from '@lifo/sandbox';
+
+async function fileOperationsExample() {
+  const sandbox = await Sandbox.create();
+
+  try {
+    // Create directory structure
+    await sandbox.fs.mkdir('/tmp/project', { recursive: true });
+    
+    // Write multiple files
+    await sandbox.fs.writeFiles([
+      { path: '/tmp/project/README.md', content: '# My Project' },
+      { path: '/tmp/project/package.json', content: JSON.stringify({ name: 'my-project' }) },
+      { path: '/tmp/project/index.js', content: 'console.log("Hello");' },
+    ]);
+    
+    // List files
+    const entries = await sandbox.fs.readdir('/tmp/project');
+    console.log('Files created:');
+    entries.forEach(e => console.log(`  - ${e.name} (${e.type})`));
+    
+    // Read and modify a file
+    const readme = await sandbox.fs.readFile('/tmp/project/README.md');
+    await sandbox.fs.writeFile(
+      '/tmp/project/README.md', 
+      readme + '\n\nUpdated content'
+    );
+    
+    // Copy project to backup
+    await sandbox.commands.run('cp -r /tmp/project /tmp/project-backup');
+    
+    // Verify backup
+    const backupExists = await sandbox.fs.exists('/tmp/project-backup/README.md');
+    console.log('Backup created:', backupExists);
+    
+  } finally {
+    sandbox.destroy();
+  }
+}
+
+fileOperationsExample();
+```

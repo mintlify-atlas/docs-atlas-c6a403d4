@@ -1,0 +1,620 @@
+---
+title: 'Shell'
+description: 'Interactive shell with command execution, pipes, and line editing'
+---
+
+## Overview
+
+The `Shell` class provides an interactive bash-like shell with full command execution, pipes, redirects, line editing, history, tab completion, and job control. It can operate in both visual mode (attached to a terminal) and headless mode (programmatic execution).
+
+## Creating a Shell
+
+```typescript
+import { Shell, Kernel, createDefaultRegistry } from '@lifo/core';
+import { Terminal } from '@xterm/xterm';
+
+const kernel = new Kernel();
+await kernel.boot();
+
+const registry = createDefaultRegistry();
+const terminal = new Terminal();
+terminal.open(document.getElementById('terminal'));
+
+const env = kernel.getDefaultEnv();
+const shell = new Shell(terminal, kernel.vfs, registry, env);
+shell.start();
+```
+
+## Constructor
+
+```typescript
+constructor(
+  terminal: ITerminal,
+  vfs: VFS,
+  registry: CommandRegistry,
+  env: Record<string, string>
+)
+```
+
+<ParamField path="terminal" type="ITerminal" required>
+  Terminal instance for input/output. Can be a visual terminal (xterm.js) or headless terminal.
+</ParamField>
+
+<ParamField path="vfs" type="VFS" required>
+  Virtual filesystem instance
+</ParamField>
+
+<ParamField path="registry" type="CommandRegistry" required>
+  Command registry for resolving commands
+</ParamField>
+
+<ParamField path="env" type="Record<string, string>" required>
+  Initial environment variables
+</ParamField>
+
+## Instance Methods
+
+### execute()
+
+Programmatic command execution with captured stdout/stderr. Used for headless mode.
+
+```typescript
+async execute(
+  cmd: string,
+  options?: ExecuteOptions
+): Promise<{ stdout: string; stderr: string; exitCode: number }>
+```
+
+<ParamField path="cmd" type="string" required>
+  Shell command to execute. Supports pipes, redirects, variables, etc.
+</ParamField>
+
+<ParamField path="options" type="ExecuteOptions" optional>
+  <Expandable title="properties">
+    <ParamField path="cwd" type="string" optional>
+      Working directory for this command
+    </ParamField>
+    
+    <ParamField path="env" type="Record<string, string>" optional>
+      Additional environment variables (merged with shell env)
+    </ParamField>
+    
+    <ParamField path="onStdout" type="(data: string) => void" optional>
+      Streaming stdout callback
+    </ParamField>
+    
+    <ParamField path="onStderr" type="(data: string) => void" optional>
+      Streaming stderr callback
+    </ParamField>
+    
+    <ParamField path="stdin" type="string" optional>
+      Provide stdin content
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ResponseField name="result" type="object">
+  <Expandable title="properties">
+    <ResponseField name="stdout" type="string">
+      Captured stdout
+    </ResponseField>
+    
+    <ResponseField name="stderr" type="string">
+      Captured stderr
+    </ResponseField>
+    
+    <ResponseField name="exitCode" type="number">
+      Exit code (0 = success)
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+**Example:**
+
+```typescript
+const result = await shell.execute('ls -la /home/user');
+console.log(result.stdout);
+console.log('Exit code:', result.exitCode);
+
+// With pipes
+const result = await shell.execute('ls | grep .txt | wc -l');
+console.log('Text files:', result.stdout.trim());
+
+// With redirects
+await shell.execute('echo "Hello" > /tmp/output.txt');
+
+// With streaming
+await shell.execute('npm install', {
+  cwd: '/home/user/project',
+  onStdout: (data) => console.log('OUT:', data),
+  onStderr: (data) => console.error('ERR:', data)
+});
+
+// With stdin
+const result = await shell.execute('grep foo', {
+  stdin: 'foo\nbar\nbaz\n'
+});
+```
+
+### start()
+
+Start the shell in visual mode. Attaches input handlers to the terminal and displays the prompt.
+
+```typescript
+start(): void
+```
+
+**Example:**
+
+```typescript
+import { Terminal } from '@xterm/xterm';
+
+const terminal = new Terminal();
+terminal.open(document.getElementById('terminal'));
+
+const shell = new Shell(terminal, vfs, registry, env);
+shell.start(); // Shell is now interactive
+```
+
+### sourceFile()
+
+Source a shell script file, executing its contents in the current shell context.
+
+```typescript
+async sourceFile(path: string): Promise<void>
+```
+
+<ParamField path="path" type="string" required>
+  Path to shell script file
+</ParamField>
+
+**Example:**
+
+```typescript
+// Create a config file
+vfs.writeFile('/home/user/.bashrc', `
+export PATH=/custom/bin:$PATH
+alias ll='ls -la'
+echo "Welcome, $USER!"
+`);
+
+// Source it
+await shell.sourceFile('/home/user/.bashrc');
+
+// Environment is now updated
+console.log(shell.getEnv().PATH); // '/custom/bin:/usr/bin:/bin'
+```
+
+### getCwd()
+
+Get current working directory.
+
+```typescript
+getCwd(): string
+```
+
+<ResponseField name="cwd" type="string">
+  Current working directory
+</ResponseField>
+
+**Example:**
+
+```typescript
+console.log(shell.getCwd()); // '/home/user'
+```
+
+### setCwd()
+
+Set current working directory.
+
+```typescript
+setCwd(cwd: string): void
+```
+
+<ParamField path="cwd" type="string" required>
+  New working directory
+</ParamField>
+
+**Example:**
+
+```typescript
+shell.setCwd('/tmp');
+console.log(shell.getCwd()); // '/tmp'
+```
+
+### getEnv()
+
+Get current environment variables.
+
+```typescript
+getEnv(): Record<string, string>
+```
+
+<ResponseField name="env" type="Record<string, string>">
+  Environment variables
+</ResponseField>
+
+**Example:**
+
+```typescript
+const env = shell.getEnv();
+console.log(env.HOME);  // '/home/user'
+console.log(env.PATH);  // '/usr/bin:/bin'
+```
+
+### getVfs()
+
+Get VFS instance.
+
+```typescript
+getVfs(): VFS
+```
+
+<ResponseField name="vfs" type="VFS">
+  Virtual filesystem instance
+</ResponseField>
+
+### getRegistry()
+
+Get command registry.
+
+```typescript
+getRegistry(): CommandRegistry
+```
+
+<ResponseField name="registry" type="CommandRegistry">
+  Command registry instance
+</ResponseField>
+
+### getJobTable()
+
+Get job control table (for background jobs).
+
+```typescript
+getJobTable(): JobTable
+```
+
+<ResponseField name="jobTable" type="JobTable">
+  Job table instance
+</ResponseField>
+
+**Example:**
+
+```typescript
+const jobTable = shell.getJobTable();
+const jobs = jobTable.list();
+for (const job of jobs) {
+  console.log(`[${job.id}] ${job.status} ${job.command}`);
+}
+```
+
+### tokenize()
+
+Tokenize a command line string (legacy, kept for backward compatibility).
+
+```typescript
+tokenize(input: string): string[]
+```
+
+<ParamField path="input" type="string" required>
+  Command line string to tokenize
+</ParamField>
+
+<ResponseField name="tokens" type="string[]">
+  Array of tokens
+</ResponseField>
+
+**Example:**
+
+```typescript
+const tokens = shell.tokenize('ls -la "my file.txt"');
+console.log(tokens); // ['ls', '-la', 'my file.txt']
+```
+
+## Built-in Commands
+
+The shell provides these built-in commands:
+
+### cd
+
+Change directory.
+
+```bash
+cd [directory]
+cd ~          # Home directory
+cd -          # Previous directory
+cd ..         # Parent directory
+```
+
+### pwd
+
+Print working directory.
+
+```bash
+pwd
+```
+
+### echo
+
+Print arguments.
+
+```bash
+echo Hello, World!
+echo $HOME
+echo "Line 1\nLine 2"
+```
+
+### export
+
+Set environment variables.
+
+```bash
+export PATH=/custom/bin:$PATH
+export NODE_ENV=production
+```
+
+### clear
+
+Clear the terminal screen.
+
+```bash
+clear
+```
+
+### exit
+
+Exit the shell.
+
+```bash
+exit
+```
+
+### history
+
+Show command history.
+
+```bash
+history
+```
+
+### jobs
+
+List background jobs.
+
+```bash
+jobs
+```
+
+### fg
+
+Bring background job to foreground.
+
+```bash
+fg [job_id]
+```
+
+### bg
+
+Resume background job.
+
+```bash
+bg [job_id]
+```
+
+### source / .
+
+Execute commands from a file.
+
+```bash
+source ~/.bashrc
+. /etc/profile
+```
+
+### alias
+
+Create command aliases.
+
+```bash
+alias ll='ls -la'
+alias gs='git status'
+alias        # List all aliases
+```
+
+### unalias
+
+Remove command aliases.
+
+```bash
+unalias ll
+```
+
+### test / [
+
+Evaluate conditional expressions.
+
+```bash
+test -f /home/user/file.txt && echo "exists"
+[ -d /tmp ] && echo "directory exists"
+```
+
+### true
+
+Always succeeds (exit code 0).
+
+```bash
+true
+```
+
+### false
+
+Always fails (exit code 1).
+
+```bash
+false
+```
+
+## Shell Features
+
+### Pipes
+
+Chain commands together:
+
+```bash
+ls | grep .txt | wc -l
+cat file.txt | sort | uniq
+```
+
+### Redirects
+
+Redirect input/output:
+
+```bash
+ls > files.txt              # Redirect stdout to file
+cat < input.txt             # Redirect file to stdin
+command 2> errors.txt       # Redirect stderr to file
+command &> output.txt       # Redirect both stdout and stderr
+command >> append.txt       # Append to file
+```
+
+### Background Jobs
+
+Run commands in background:
+
+```bash
+sleep 10 &                  # Run in background
+jobs                        # List jobs
+fg 1                        # Bring job 1 to foreground
+```
+
+### Command Chaining
+
+Chain multiple commands:
+
+```bash
+command1 && command2        # Run command2 if command1 succeeds
+command1 || command2        # Run command2 if command1 fails
+command1 ; command2         # Run both regardless
+```
+
+### Variable Expansion
+
+Expand variables:
+
+```bash
+echo $HOME
+echo ${USER}_backup
+PATH=/custom:$PATH
+```
+
+### Command Substitution
+
+Substitute command output:
+
+```bash
+echo "Today is $(date)"
+files=$(ls | wc -l)
+```
+
+### Glob Patterns
+
+Filename expansion:
+
+```bash
+ls *.txt
+cat file?.log
+rm [abc]*.tmp
+```
+
+### Quotes
+
+Control word splitting and expansion:
+
+```bash
+echo "$HOME expansion"      # Double quotes: expand variables
+echo '$HOME literal'        # Single quotes: no expansion
+echo "Line 1\nLine 2"       # Escape sequences work
+```
+
+### History Expansion
+
+Recall previous commands:
+
+```bash
+!!                          # Repeat last command
+!10                         # Repeat command 10
+!grep                       # Repeat last command starting with 'grep'
+```
+
+### Tab Completion
+
+Press Tab to autocomplete:
+
+- Command names
+- File paths
+- Directory names
+- Environment variables
+
+Press Tab twice to show all completions.
+
+### Line Editing
+
+Keyboard shortcuts:
+
+- `Ctrl+A` - Move to beginning of line
+- `Ctrl+E` - Move to end of line
+- `Ctrl+U` - Clear line
+- `Ctrl+C` - Cancel current command
+- `Ctrl+D` - EOF / exit
+- `Arrow Up/Down` - Navigate history
+- `Arrow Left/Right` - Move cursor
+- `Home/End` - Jump to start/end
+- `Backspace/Delete` - Delete characters
+
+## Type Definitions
+
+```typescript
+interface ExecuteOptions {
+  cwd?: string;
+  env?: Record<string, string>;
+  onStdout?: (data: string) => void;
+  onStderr?: (data: string) => void;
+  stdin?: string;
+}
+
+interface ITerminal {
+  write(data: string): void;
+  onData(handler: (data: string) => void): void;
+  clear(): void;
+  focus(): void;
+}
+```
+
+## Source Location
+
+```typescript
+// src/shell/Shell.ts (926 lines)
+export class Shell {
+  constructor(
+    terminal: ITerminal,
+    vfs: VFS,
+    registry: CommandRegistry,
+    env: Record<string, string>
+  );
+  
+  async execute(cmd: string, options?: ExecuteOptions): Promise<{
+    stdout: string;
+    stderr: string;
+    exitCode: number;
+  }>;
+  
+  start(): void;
+  async sourceFile(path: string): Promise<void>;
+  getCwd(): string;
+  setCwd(cwd: string): void;
+  getEnv(): Record<string, string>;
+  getVfs(): VFS;
+  getRegistry(): CommandRegistry;
+  getJobTable(): JobTable;
+  tokenize(input: string): string[];
+}
+```

@@ -1,0 +1,291 @@
+---
+title: Filesystem Operations
+description: Work with files and directories using the async filesystem API
+---
+
+The `sandbox.fs` API provides an async interface for filesystem operations. All paths are resolved relative to the current working directory unless they start with `/`.
+
+## Reading Files
+
+### Read Text Files
+
+```typescript
+// Read as UTF-8 string (default)
+const content = await sandbox.fs.readFile('/home/user/config.txt');
+console.log(content); // string
+```
+
+### Read Binary Files
+
+```typescript
+// Read as Uint8Array by passing null as encoding
+const binary = await sandbox.fs.readFile('/home/user/image.png', null);
+console.log(binary); // Uint8Array
+```
+
+## Writing Files
+
+Write files with either string or binary content:
+
+```typescript
+// Write string content
+await sandbox.fs.writeFile('/tmp/output.txt', 'Hello, world!');
+
+// Write binary content
+const data = new Uint8Array([72, 101, 108, 108, 111]); // "Hello"
+await sandbox.fs.writeFile('/tmp/binary.dat', data);
+
+// Write JSON
+const config = { port: 8080, host: 'localhost' };
+await sandbox.fs.writeFile('/tmp/config.json', JSON.stringify(config, null, 2));
+```
+
+<Warning>
+  Parent directories must exist before writing files, or use `mkdir` with `recursive: true` first.
+</Warning>
+
+## Batch Writing
+
+Write multiple files efficiently in one call:
+
+```typescript
+await sandbox.fs.writeFiles([
+  { path: '/tmp/file1.txt', content: 'First file' },
+  { path: '/tmp/file2.txt', content: 'Second file' },
+  { path: '/tmp/data.bin', content: new Uint8Array([1, 2, 3]) }
+]);
+```
+
+## Directory Operations
+
+### Creating Directories
+
+```typescript
+// Create single directory
+await sandbox.fs.mkdir('/tmp/mydir');
+
+// Create nested directories recursively
+await sandbox.fs.mkdir('/home/user/deep/nested/path', { recursive: true });
+```
+
+### Listing Directories
+
+```typescript
+// Read directory contents
+const entries = await sandbox.fs.readdir('/home/user');
+
+for (const entry of entries) {
+  console.log(entry.name, entry.type); // 'file' | 'directory'
+}
+
+// Filter by type
+const files = entries.filter(e => e.type === 'file');
+const dirs = entries.filter(e => e.type === 'directory');
+```
+
+### Removing Directories
+
+```typescript
+// Remove empty directory
+await sandbox.fs.rm('/tmp/emptydir');
+
+// Remove directory recursively (like rm -rf)
+await sandbox.fs.rm('/tmp/mydir', { recursive: true });
+```
+
+## File Information
+
+### Check Existence
+
+```typescript
+const exists = await sandbox.fs.exists('/home/user/config.json');
+if (exists) {
+  console.log('File exists');
+}
+```
+
+### Get File Stats
+
+```typescript
+const stats = await sandbox.fs.stat('/home/user/file.txt');
+
+console.log(stats.type);  // 'file' | 'directory'
+console.log(stats.size);  // file size in bytes
+console.log(stats.mtime); // last modified time (unix timestamp)
+```
+
+## File Operations
+
+### Copying Files
+
+```typescript
+// Copy file (original remains)
+await sandbox.fs.cp('/tmp/source.txt', '/tmp/dest.txt');
+
+// Verify both exist
+const srcExists = await sandbox.fs.exists('/tmp/source.txt'); // true
+const dstExists = await sandbox.fs.exists('/tmp/dest.txt');   // true
+```
+
+### Renaming/Moving Files
+
+```typescript
+// Rename or move file
+await sandbox.fs.rename('/tmp/old-name.txt', '/tmp/new-name.txt');
+
+// Move to different directory
+await sandbox.fs.rename('/home/user/file.txt', '/tmp/file.txt');
+
+// Original no longer exists after rename
+const exists = await sandbox.fs.exists('/tmp/old-name.txt'); // false
+```
+
+### Removing Files
+
+```typescript
+// Remove a single file
+await sandbox.fs.rm('/tmp/unwanted.txt');
+```
+
+## Path Resolution
+
+Paths are resolved relative to the sandbox's current working directory:
+
+```typescript
+// Absolute paths work from anywhere
+await sandbox.fs.writeFile('/tmp/file.txt', 'content');
+
+// Relative paths use the sandbox cwd
+sandbox.cwd = '/home/user';
+await sandbox.fs.writeFile('config.json', '{}'); // writes to /home/user/config.json
+
+// Change working directory
+sandbox.cwd = '/tmp';
+const content = await sandbox.fs.readFile('file.txt'); // reads /tmp/file.txt
+```
+
+## Complete Example: Project Setup
+
+```typescript
+import { Sandbox } from '@lifo/core';
+
+async function setupProject() {
+  const sandbox = await Sandbox.create();
+
+  try {
+    // Create project structure
+    await sandbox.fs.mkdir('/home/user/my-app/src', { recursive: true });
+    await sandbox.fs.mkdir('/home/user/my-app/tests', { recursive: true });
+
+    // Write project files
+    await sandbox.fs.writeFiles([
+      {
+        path: '/home/user/my-app/package.json',
+        content: JSON.stringify({
+          name: 'my-app',
+          version: '1.0.0',
+          main: 'src/index.js'
+        }, null, 2)
+      },
+      {
+        path: '/home/user/my-app/src/index.js',
+        content: 'console.log("Hello, Lifo!");'
+      },
+      {
+        path: '/home/user/my-app/README.md',
+        content: '# My App\n\nA sample project.'
+      }
+    ]);
+
+    // Verify structure
+    const entries = await sandbox.fs.readdir('/home/user/my-app');
+    console.log('Created:', entries.map(e => e.name));
+
+    // Read back and parse JSON
+    const pkgJson = await sandbox.fs.readFile('/home/user/my-app/package.json');
+    const pkg = JSON.parse(pkgJson);
+    console.log('Project name:', pkg.name);
+
+    // Get stats
+    const stats = await sandbox.fs.stat('/home/user/my-app/src/index.js');
+    console.log('index.js size:', stats.size, 'bytes');
+
+  } finally {
+    sandbox.destroy();
+  }
+}
+
+setupProject().catch(console.error);
+```
+
+## Working with Binary Files
+
+```typescript
+// Create binary data
+const pixels = new Uint8Array(256);
+for (let i = 0; i < 256; i++) {
+  pixels[i] = i;
+}
+
+// Write binary file
+await sandbox.fs.writeFile('/tmp/image.raw', pixels);
+
+// Read it back
+const loaded = await sandbox.fs.readFile('/tmp/image.raw', null);
+console.log(loaded instanceof Uint8Array); // true
+console.log(loaded.length); // 256
+
+// Verify contents match
+for (let i = 0; i < pixels.length; i++) {
+  console.assert(loaded[i] === pixels[i]);
+}
+```
+
+## Snapshot Export/Import
+
+Export and import the entire filesystem as a compressed snapshot:
+
+```typescript
+// Export entire VFS to tar.gz
+const snapshot = await sandbox.fs.exportSnapshot();
+console.log('Snapshot size:', snapshot.length, 'bytes');
+
+// Save snapshot to host (browser example)
+const blob = new Blob([snapshot], { type: 'application/gzip' });
+const url = URL.createObjectURL(blob);
+const a = document.createElement('a');
+a.href = url;
+a.download = 'lifo-snapshot.tar.gz';
+a.click();
+
+// Later: restore from snapshot
+const sandbox2 = await Sandbox.create();
+await sandbox2.fs.importSnapshot(snapshot);
+
+// All files are restored
+const content = await sandbox2.fs.readFile('/home/user/my-file.txt');
+```
+
+<Warning>
+  Virtual directories like `/proc` and `/dev` are automatically excluded from snapshots since they're generated at runtime.
+</Warning>
+
+## Error Handling
+
+```typescript
+try {
+  await sandbox.fs.readFile('/nonexistent/file.txt');
+} catch (error) {
+  console.error('File not found:', error.message);
+}
+
+// Check before accessing
+if (await sandbox.fs.exists('/etc/config.json')) {
+  const config = await sandbox.fs.readFile('/etc/config.json');
+  // Process config...
+}
+```
+
+## API Reference
+
+See the [SandboxFs API reference](/api-reference/sandbox-fs) for complete type signatures and details.

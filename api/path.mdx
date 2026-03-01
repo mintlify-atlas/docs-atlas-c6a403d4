@@ -1,0 +1,270 @@
+---
+title: Path Utilities
+description: POSIX path manipulation utilities for file paths
+---
+
+## Overview
+
+Path utilities provide pure string manipulation for file paths without performing any I/O operations. All functions follow POSIX conventions.
+
+## normalize()
+
+Normalize a path by resolving `.` and `..` segments.
+
+### Signature
+
+```typescript
+function normalize(path: string): string
+```
+
+### Usage
+
+```javascript
+import { normalize } from '@core/utils/path';
+
+normalize('/foo/bar/../baz'); // '/foo/baz'
+normalize('./foo//bar/'); // 'foo/bar'
+normalize('foo/./bar'); // 'foo/bar'
+normalize(''); // '.'
+normalize('/'); // '/'
+```
+
+## isAbsolute()
+
+Check if a path is absolute (starts with `/`).
+
+### Signature
+
+```typescript
+function isAbsolute(path: string): boolean
+```
+
+### Usage
+
+```javascript
+import { isAbsolute } from '@core/utils/path';
+
+isAbsolute('/foo/bar'); // true
+isAbsolute('foo/bar'); // false
+isAbsolute('../foo'); // false
+```
+
+## join()
+
+Join path segments together.
+
+### Signature
+
+```typescript
+function join(...segments: string[]): string
+```
+
+### Usage
+
+```javascript
+import { join } from '@core/utils/path';
+
+join('/foo', 'bar', 'baz'); // '/foo/bar/baz'
+join('foo', '../bar'); // 'bar'
+join('foo', '', 'bar'); // 'foo/bar' (empty segments ignored)
+join('foo', './bar'); // 'foo/bar'
+```
+
+## resolve()
+
+Resolve a sequence of paths into an absolute path.
+
+### Signature
+
+```typescript
+function resolve(cwd: string, ...segments: string[]): string
+```
+
+### Parameters
+
+- **cwd** `string` - Current working directory (base path)
+- **segments** `string[]` - Path segments to resolve
+
+### Usage
+
+```javascript
+import { resolve } from '@core/utils/path';
+
+resolve('/home/user', 'docs', 'file.txt'); // '/home/user/docs/file.txt'
+resolve('/home/user', '../other'); // '/home/other'
+resolve('/home/user', '/absolute/path'); // '/absolute/path'
+resolve('/home/user', 'foo', '../bar'); // '/home/user/bar'
+```
+
+## dirname()
+
+Get the directory name of a path.
+
+### Signature
+
+```typescript
+function dirname(path: string): string
+```
+
+### Usage
+
+```javascript
+import { dirname } from '@core/utils/path';
+
+dirname('/foo/bar/baz.txt'); // '/foo/bar'
+dirname('/foo/bar/'); // '/foo/bar'
+dirname('/foo'); // '/'
+dirname('foo/bar'); // 'foo'
+dirname('foo'); // '.'
+```
+
+## basename()
+
+Get the last portion of a path.
+
+### Signature
+
+```typescript
+function basename(path: string, ext?: string): string
+```
+
+### Parameters
+
+- **path** `string` - File path
+- **ext** `string` - Optional extension to remove
+
+### Usage
+
+```javascript
+import { basename } from '@core/utils/path';
+
+basename('/foo/bar/baz.txt'); // 'baz.txt'
+basename('/foo/bar/baz.txt', '.txt'); // 'baz'
+basename('/foo/bar/'); // 'bar'
+basename('baz.txt', '.txt'); // 'baz'
+```
+
+## extname()
+
+Get the extension of a path.
+
+### Signature
+
+```typescript
+function extname(path: string): string
+```
+
+### Usage
+
+```javascript
+import { extname } from '@core/utils/path';
+
+extname('file.txt'); // '.txt'
+extname('file.tar.gz'); // '.gz'
+extname('file'); // ''
+extname('.bashrc'); // ''
+extname('/path/to/file.txt'); // '.txt'
+```
+
+## split()
+
+Split a path into segments.
+
+### Signature
+
+```typescript
+function split(path: string): string[]
+```
+
+### Usage
+
+```javascript
+import { split } from '@core/utils/path';
+
+split('/foo/bar/baz'); // ['/', 'foo', 'bar', 'baz']
+split('foo/bar/baz'); // ['foo', 'bar', 'baz']
+split('/'); // ['/']
+split('foo'); // ['foo']
+```
+
+## Complete Example
+
+```javascript
+import * as path from '@core/utils/path';
+
+// Build file path
+const projectRoot = '/home/user/project';
+const srcDir = path.join(projectRoot, 'src');
+const filePath = path.resolve(srcDir, 'components', 'Button.tsx');
+console.log(filePath); // '/home/user/project/src/components/Button.tsx'
+
+// Extract path components
+const dir = path.dirname(filePath); // '/home/user/project/src/components'
+const file = path.basename(filePath); // 'Button.tsx'
+const name = path.basename(filePath, '.tsx'); // 'Button'
+const ext = path.extname(filePath); // '.tsx'
+
+// Navigate paths
+const parentDir = path.resolve(dir, '..');
+console.log(parentDir); // '/home/user/project/src'
+
+// Check path type
+if (path.isAbsolute(filePath)) {
+  console.log('Absolute path');
+}
+
+// Split path into segments
+const segments = path.split(filePath);
+console.log(segments);
+// ['/', 'home', 'user', 'project', 'src', 'components', 'Button.tsx']
+```
+
+## Path Patterns
+
+### Convert relative to absolute
+
+```javascript
+const cwd = '/home/user';
+const relative = '../other/file.txt';
+const absolute = path.resolve(cwd, relative);
+// '/home/other/file.txt'
+```
+
+### Get file without extension
+
+```javascript
+const filePath = '/path/to/document.pdf';
+const name = path.basename(filePath, path.extname(filePath));
+// 'document'
+```
+
+### Change file extension
+
+```javascript
+const original = '/path/to/file.ts';
+const dir = path.dirname(original);
+const base = path.basename(original, '.ts');
+const newPath = path.join(dir, base + '.js');
+// '/path/to/file.js'
+```
+
+### Normalize user input
+
+```javascript
+const userPath = 'foo//bar/../baz/./file.txt';
+const normalized = path.normalize(userPath);
+// 'foo/baz/file.txt'
+```
+
+## Notes
+
+- All functions perform pure string manipulation (no I/O)
+- Follows POSIX conventions (forward slashes)
+- Empty path normalizes to `'.'`
+- Absolute paths start with `/`
+- `..` segments are resolved relative to current position
+
+## Related
+
+- [Node.js Modules](/api/node-modules)
+- [MIME Types](/api/mime)

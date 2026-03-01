@@ -1,0 +1,377 @@
+---
+title: Shell Scripts
+description: Use advanced shell features like pipes, redirects, variables, and globs
+---
+
+## Pipes
+
+Pipe output from one command to another:
+
+```typescript
+const sandbox = await Sandbox.create();
+
+const result = await sandbox.commands.run('echo hello | cat');
+console.log(result.stdout); // "hello\n"
+```
+
+### Complex Pipelines
+
+```typescript
+// Chain multiple commands
+const result = await sandbox.commands.run('echo -e "apple\nbanana\ncherry" | grep a | cat');
+console.log(result.stdout);
+// Output:
+// apple
+// banana
+```
+
+## Output Redirection
+
+### Redirect to File (>)
+
+Write command output to a file:
+
+```typescript
+const sandbox = await Sandbox.create();
+
+await sandbox.commands.run('echo content > /tmp/redir.txt');
+
+const content = await sandbox.fs.readFile('/tmp/redir.txt');
+console.log(content); // "content\n"
+```
+
+### Append to File (>>)
+
+Append output to an existing file:
+
+```typescript
+await sandbox.fs.writeFile('/tmp/log.txt', 'hello\n');
+await sandbox.commands.run('echo more >> /tmp/log.txt');
+
+const content = await sandbox.fs.readFile('/tmp/log.txt');
+console.log(content);
+// Output:
+// hello
+// more
+```
+
+## Input Redirection
+
+### Read from File (&lt;)
+
+Use file contents as command input:
+
+```typescript
+const sandbox = await Sandbox.create();
+
+await sandbox.fs.writeFile('/tmp/in.txt', 'file content');
+
+const result = await sandbox.commands.run('cat < /tmp/in.txt');
+console.log(result.stdout); // "file content"
+```
+
+### Using Stdin Option
+
+Alternatively, pass stdin programmatically:
+
+```typescript
+const result = await sandbox.commands.run('cat', {
+  stdin: 'hello from stdin\n'
+});
+
+console.log(result.stdout); // "hello from stdin\n"
+```
+
+### Write File from Stdin
+
+```typescript
+await sandbox.commands.run('cat > /tmp/stdin-test.txt', {
+  stdin: 'written via stdin\n'
+});
+
+const content = await sandbox.fs.readFile('/tmp/stdin-test.txt');
+console.log(content); // "written via stdin\n"
+```
+
+## Environment Variables
+
+### Variable Expansion
+
+```typescript
+const sandbox = await Sandbox.create();
+
+const result = await sandbox.commands.run('echo $HOME');
+console.log(result.stdout); // "/home/user\n"
+```
+
+### Setting Variables
+
+```typescript
+await sandbox.commands.run('export FOO=bar');
+
+const result = await sandbox.commands.run('echo $FOO');
+console.log(result.stdout); // "bar\n"
+```
+
+### Per-Command Environment
+
+```typescript
+const result = await sandbox.commands.run('echo $MY_VAR', {
+  env: { MY_VAR: 'hello' }
+});
+
+console.log(result.stdout); // "hello\n"
+```
+
+### Default Values
+
+Use default value when variable is unset:
+
+```typescript
+const result = await sandbox.commands.run('echo ${MISSING:-fallback}');
+console.log(result.stdout); // "fallback\n"
+```
+
+### Conditional Defaults
+
+Variable set - use its value:
+
+```typescript
+const result = await sandbox.commands.run('echo ${HOME:-fallback}');
+console.log(result.stdout); // "/home/user\n"
+```
+
+## Glob Expansion
+
+### Wildcard Matching
+
+```typescript
+const sandbox = await Sandbox.create();
+
+// Create test files
+await sandbox.fs.writeFile('/home/user/a.txt', 'a');
+await sandbox.fs.writeFile('/home/user/b.txt', 'b');
+await sandbox.fs.writeFile('/home/user/c.log', 'c');
+
+const result = await sandbox.commands.run('echo *.txt');
+console.log(result.stdout); // "a.txt b.txt\n"
+```
+
+### Common Glob Patterns
+
+<CodeGroup>
+
+```typescript *.txt - All .txt files
+const result = await sandbox.commands.run('ls *.txt');
+// Matches: file.txt, data.txt, etc.
+```
+
+```typescript file* - Files starting with "file"
+const result = await sandbox.commands.run('ls file*');
+// Matches: file.txt, file.log, file123, etc.
+```
+
+```typescript *.{js,ts} - Multiple Extensions
+const result = await sandbox.commands.run('ls *.{js,ts}');
+// Matches: index.js, main.ts, etc.
+```
+
+</CodeGroup>
+
+## Command Chaining
+
+### && (AND)
+
+Run second command only if first succeeds:
+
+```typescript
+const result = await sandbox.commands.run('true && echo yes');
+console.log(result.stdout); // "yes\n"
+
+const failed = await sandbox.commands.run('false && echo nope');
+console.log(failed.stdout); // "" (second command didn't run)
+```
+
+### || (OR)
+
+Run second command only if first fails:
+
+```typescript
+const result = await sandbox.commands.run('false || echo fallback');
+console.log(result.stdout); // "fallback\n"
+
+const success = await sandbox.commands.run('true || echo nope');
+console.log(success.stdout); // "" (second command didn't run)
+```
+
+### ; (Sequential)
+
+Run commands unconditionally:
+
+```typescript
+const result = await sandbox.commands.run('echo first ; echo second');
+console.log(result.stdout);
+// Output:
+// first
+// second
+```
+
+## Combining Features
+
+### Pipes with Redirects
+
+```typescript
+const sandbox = await Sandbox.create();
+
+// Pipe and redirect
+await sandbox.commands.run('echo "hello\nworld" | grep hello > /tmp/out.txt');
+
+const content = await sandbox.fs.readFile('/tmp/out.txt');
+console.log(content); // "hello\n"
+```
+
+### Variables with Globs
+
+```typescript
+await sandbox.commands.run('export EXT=txt');
+await sandbox.fs.writeFile('/tmp/test.txt', 'data');
+
+const result = await sandbox.commands.run('ls /tmp/*.$EXT');
+console.log(result.stdout); // "/tmp/test.txt\n"
+```
+
+### Chaining with Redirects
+
+```typescript
+await sandbox.commands.run(
+  'echo "step 1" > /tmp/log.txt && echo "step 2" >> /tmp/log.txt'
+);
+
+const log = await sandbox.fs.readFile('/tmp/log.txt');
+console.log(log);
+// Output:
+// step 1
+// step 2
+```
+
+## Quoting and Escaping
+
+### Double Quotes
+
+Preserve spaces, expand variables:
+
+```typescript
+const result = await sandbox.commands.run('echo "hello world"');
+console.log(result.stdout); // "hello world\n"
+
+const withVar = await sandbox.commands.run('echo "Home: $HOME"');
+console.log(withVar.stdout); // "Home: /home/user\n"
+```
+
+### Single Quotes
+
+Preserve everything literally:
+
+```typescript
+const result = await sandbox.commands.run("echo 'hello world'");
+console.log(result.stdout); // "hello world\n"
+
+const noExpansion = await sandbox.commands.run("echo '$HOME'");
+console.log(noExpansion.stdout); // "$HOME\n"
+```
+
+## Shell Script Example
+
+Create and run a multi-line shell script:
+
+```typescript
+import { Sandbox } from '@lifo/sandbox';
+
+async function shellScriptExample() {
+  const sandbox = await Sandbox.create();
+
+  try {
+    // Create a shell script
+    const script = `#!/bin/sh
+set -e
+
+# Setup
+export APP_NAME="myapp"
+export LOG_FILE="/tmp/$APP_NAME.log"
+
+# Create log directory
+mkdir -p /tmp/logs
+
+# Run commands
+echo "Starting $APP_NAME..." > $LOG_FILE
+echo "Current directory: $(pwd)" >> $LOG_FILE
+echo "User: $USER" >> $LOG_FILE
+
+# Process some files
+for file in /tmp/*.txt; do
+  if [ -f "$file" ]; then
+    echo "Processing $file" >> $LOG_FILE
+  fi
+done
+
+echo "Complete" >> $LOG_FILE
+`;
+
+    await sandbox.fs.writeFile('/tmp/script.sh', script);
+    
+    // Make executable and run
+    await sandbox.commands.run('chmod +x /tmp/script.sh');
+    const result = await sandbox.commands.run('/tmp/script.sh');
+    
+    // Read the log
+    const log = await sandbox.fs.readFile('/tmp/myapp.log');
+    console.log('Script output:');
+    console.log(log);
+    
+  } finally {
+    sandbox.destroy();
+  }
+}
+
+shellScriptExample();
+```
+
+## Advanced Pipeline Example
+
+```typescript
+import { Sandbox } from '@lifo/sandbox';
+
+async function pipelineExample() {
+  const sandbox = await Sandbox.create();
+
+  try {
+    // Create sample data
+    await sandbox.fs.writeFile('/tmp/data.csv', 
+      'name,age,city\n' +
+      'Alice,30,NYC\n' +
+      'Bob,25,LA\n' +
+      'Charlie,35,NYC\n'
+    );
+    
+    // Complex pipeline: filter, sort, and save
+    await sandbox.commands.run(
+      'cat /tmp/data.csv | ' +
+      'grep NYC | ' +
+      'sort > /tmp/nyc-residents.txt'
+    );
+    
+    const result = await sandbox.fs.readFile('/tmp/nyc-residents.txt');
+    console.log('NYC Residents:');
+    console.log(result);
+    
+    // Output:
+    // Alice,30,NYC
+    // Charlie,35,NYC
+    
+  } finally {
+    sandbox.destroy();
+  }
+}
+
+pipelineExample();
+```

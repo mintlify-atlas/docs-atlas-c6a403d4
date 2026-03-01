@@ -1,0 +1,423 @@
+---
+title: "Installation"
+description: "Install Lifo in your project using npm, yarn, or pnpm"
+---
+
+## Package Overview
+
+Lifo is distributed as a collection of npm packages. Choose the packages that fit your use case:
+
+<CardGroup cols={2}>
+  <Card title="@lifo-sh/core" icon="box">
+    **Required** - Kernel, shell, VFS, commands, and sandbox API
+  </Card>
+  
+  <Card title="@lifo-sh/ui" icon="terminal">
+    **Optional** - Terminal UI component based on xterm.js
+  </Card>
+  
+  <Card title="lifo-sh" icon="command">
+    **Optional** - CLI tool to run Lifo in your system terminal
+  </Card>
+</CardGroup>
+
+## Installing the Core Package
+
+The `@lifo-sh/core` package is the foundation of Lifo. It includes everything needed to create sandboxes and run commands programmatically.
+
+<CodeGroup>
+```bash npm
+npm install @lifo-sh/core
+```
+
+```bash yarn
+yarn add @lifo-sh/core
+```
+
+```bash pnpm
+pnpm add @lifo-sh/core
+```
+</CodeGroup>
+
+### Package Details
+
+<Note>
+- **Version**: 0.5.0+
+- **Size**: ~150KB minified
+- **License**: MIT
+- **Repository**: [github.com/lifo-sh/lifo](https://github.com/lifo-sh/lifo)
+</Note>
+
+## Installing the UI Package
+
+Add the terminal UI component to create interactive terminal experiences in your web application:
+
+<CodeGroup>
+```bash npm
+npm install @lifo-sh/ui
+```
+
+```bash yarn
+yarn add @lifo-sh/ui
+```
+
+```bash pnpm
+pnpm add @lifo-sh/ui
+```
+</CodeGroup>
+
+<Tip>
+The UI package includes xterm.js and addons. Only install this if you need visual terminal rendering.
+</Tip>
+
+## Installing the CLI
+
+Run Lifo directly in your system terminal:
+
+<CodeGroup>
+```bash npm
+npm install -g lifo-sh
+```
+
+```bash yarn
+yarn global add lifo-sh
+```
+
+```bash pnpm
+pnpm add -g lifo-sh
+```
+</CodeGroup>
+
+After installation, launch Lifo:
+
+```bash
+lifo
+```
+
+## Quick Start Examples
+
+### Headless / Programmatic Usage
+
+For server-side or programmatic usage without a visual terminal:
+
+```typescript
+import { Sandbox } from '@lifo-sh/core';
+
+const sandbox = await Sandbox.create();
+
+// Run commands
+const result = await sandbox.commands.run('ls -la /home/user');
+console.log(result.stdout);
+
+// Work with files
+await sandbox.fs.writeFile('/tmp/test.txt', 'Hello, Lifo!');
+const content = await sandbox.fs.readFile('/tmp/test.txt');
+```
+
+### Browser with Terminal UI
+
+For web applications with interactive terminal:
+
+```typescript
+import { Terminal } from '@lifo-sh/ui';
+import { Sandbox } from '@lifo-sh/core';
+
+// Create terminal in a DOM element
+const terminal = new Terminal(document.getElementById('terminal'));
+
+// Create sandbox with terminal attached
+const sandbox = await Sandbox.create({
+  terminal,
+  persist: true, // Enable IndexedDB persistence
+});
+
+// Terminal is now interactive!
+```
+
+### Node.js Environment
+
+Lifo works in Node.js environments too:
+
+```typescript
+import { Sandbox } from '@lifo-sh/core';
+
+const sandbox = await Sandbox.create();
+
+// Mount a real directory into the virtual filesystem
+sandbox.mountNative('/mnt/project', '/path/to/project', {
+  readOnly: false,
+  fsModule: require('node:fs'),
+});
+
+// Now you can work with real files
+await sandbox.commands.run('ls /mnt/project');
+```
+
+## TypeScript Support
+
+Lifo is written in TypeScript and includes full type definitions:
+
+```typescript
+import type {
+  Sandbox,
+  SandboxOptions,
+  CommandResult,
+  RunOptions,
+  SandboxFs,
+  SandboxCommands,
+} from '@lifo-sh/core';
+
+const options: SandboxOptions = {
+  persist: true,
+  cwd: '/home/user',
+  env: { DEBUG: '1' },
+};
+
+const sandbox = await Sandbox.create(options);
+```
+
+<Tip>
+TypeScript 5.0+ is recommended for the best development experience.
+</Tip>
+
+## Browser Requirements
+
+Lifo requires a modern browser with support for:
+
+- ES2020+ features (async/await, dynamic import, etc.)
+- Web APIs: `fetch`, `ReadableStream`, `TextEncoder`/`TextDecoder`
+- IndexedDB (for persistence)
+
+### Supported Browsers
+
+<CardGroup cols={3}>
+  <Card title="Chrome" icon="chrome">
+    Version 110+
+  </Card>
+  
+  <Card title="Firefox" icon="firefox">
+    Version 110+
+  </Card>
+  
+  <Card title="Safari" icon="safari">
+    Version 16.4+
+  </Card>
+</CardGroup>
+
+<Note>
+Edge and other Chromium-based browsers are also supported.
+</Note>
+
+## Build Tool Configuration
+
+### Vite
+
+No special configuration needed! Lifo works out of the box with Vite:
+
+```javascript vite.config.js
+import { defineConfig } from 'vite';
+
+export default defineConfig({
+  // Lifo works without any special config
+});
+```
+
+### Webpack
+
+For Webpack, you may need to configure fallbacks for Node.js modules:
+
+```javascript webpack.config.js
+module.exports = {
+  resolve: {
+    fallback: {
+      "fs": false,
+      "path": false,
+      "crypto": false,
+    }
+  }
+};
+```
+
+### Next.js
+
+Configure Next.js to handle Lifo as a client-side module:
+
+```javascript next.config.js
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  webpack: (config) => {
+    config.resolve.fallback = {
+      ...config.resolve.fallback,
+      fs: false,
+      path: false,
+    };
+    return config;
+  },
+};
+
+module.exports = nextConfig;
+```
+
+Then use dynamic imports with `ssr: false`:
+
+```typescript
+import dynamic from 'next/dynamic';
+
+const LifoTerminal = dynamic(
+  () => import('../components/LifoTerminal'),
+  { ssr: false }
+);
+```
+
+## Environment Variables
+
+Configure Lifo behavior through sandbox options:
+
+```typescript
+const sandbox = await Sandbox.create({
+  env: {
+    HOME: '/home/user',
+    USER: 'developer',
+    HOSTNAME: 'lifo',
+    PATH: '/bin:/usr/bin',
+    SHELL: '/bin/sh',
+    // Add custom variables
+    DEBUG: '1',
+    API_KEY: 'your-key',
+  }
+});
+```
+
+## Package Extensions
+
+Lifo supports installable packages for additional functionality:
+
+<CardGroup cols={2}>
+  <Card title="lifo-pkg-git" icon="git">
+    Git version control using isomorphic-git
+  </Card>
+  
+  <Card title="lifo-pkg-ffmpeg" icon="video">
+    FFmpeg for video/audio processing (WebAssembly)
+  </Card>
+</CardGroup>
+
+Install packages at runtime:
+
+```bash
+# Inside Lifo shell
+lifo install https://example.com/package.tgz
+
+# Or programmatically
+await sandbox.commands.run('lifo install https://example.com/package.tgz');
+```
+
+## Troubleshooting
+
+### Module Not Found
+
+If you get module resolution errors:
+
+```typescript
+// Use the full package path
+import { Sandbox } from '@lifo-sh/core';
+
+// Not:
+import { Sandbox } from '@lifo-sh/core/dist/index.js';
+```
+
+### IndexedDB Quota Exceeded
+
+If you hit storage limits:
+
+```typescript
+// Clear persisted data
+await sandbox.kernel.persistence.clear();
+
+// Or start fresh without persistence
+const sandbox = await Sandbox.create({ persist: false });
+```
+
+### TypeScript Errors
+
+Ensure your `tsconfig.json` includes:
+
+```json tsconfig.json
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "esModuleInterop": true,
+    "skipLibCheck": true
+  }
+}
+```
+
+## Verifying Installation
+
+Test your installation with this simple script:
+
+```typescript test.ts
+import { Sandbox } from '@lifo-sh/core';
+
+async function test() {
+  console.log('Creating sandbox...');
+  const sandbox = await Sandbox.create();
+  
+  console.log('Running command...');
+  const result = await sandbox.commands.run('echo "Installation successful!"');
+  
+  console.log(result.stdout); // "Installation successful!\n"
+  console.log('Exit code:', result.exitCode); // 0
+  
+  console.log('✓ Lifo is working correctly!');
+}
+
+test().catch(console.error);
+```
+
+Run it:
+
+<CodeGroup>
+```bash Node.js
+node test.ts
+```
+
+```bash Browser
+# Serve with your dev server
+npm run dev
+```
+</CodeGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart Guide" icon="rocket" href="/quickstart">
+    Build your first Lifo application
+  </Card>
+  
+  <Card title="Core Concepts" icon="book" href="/concepts/architecture">
+    Learn about Lifo's architecture
+  </Card>
+  
+  <Card title="API Reference" icon="code" href="/api/sandbox">
+    Explore the complete API
+  </Card>
+  
+  <Card title="Examples" icon="lightbulb" href="/examples/basic-usage">
+    See real-world usage examples
+  </Card>
+</CardGroup>
+
+## Getting Help
+
+<CardGroup cols={2}>
+  <Card title="GitHub Issues" icon="github" href="https://github.com/lifo-sh/lifo/issues">
+    Report bugs or request features
+  </Card>
+  
+  <Card title="Discussions" icon="comments" href="https://github.com/lifo-sh/lifo/discussions">
+    Ask questions and share ideas
+  </Card>
+</CardGroup>

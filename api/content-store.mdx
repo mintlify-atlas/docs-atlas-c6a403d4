@@ -1,0 +1,457 @@
+---
+title: "ContentStore"
+description: "Synchronous in-memory cache for chunked file content with LRU eviction"
+---
+
+## Overview
+
+The ContentStore provides a synchronous, content-addressable cache for file chunks with automatic LRU (Least Recently Used) eviction. It's designed to keep the VFS API fully synchronous while handling large files efficiently.
+
+## Why ContentStore?
+
+The VFS API is fully synchronous, but large files can't be stored inline in INodes. ContentStore solves this by:
+
+1. **Chunking large files** (≥1 MB) into fixed-size pieces (256 KB)
+2. **Caching chunks** in memory with content-addressable storage
+3. **Evicting old chunks** automatically when memory limits are reached
+4. **Providing sync access** without blocking on I/O
+
+---
+
+## Constants
+
+### CHUNK_THRESHOLD
+
+Files at or above this size are chunked rather than stored inline.
+
+```typescript
+export const CHUNK_THRESHOLD = 1 * 1024 * 1024; // 1 MB
+```
+
+<Info>
+  Defined in `ContentStore.ts:17`. Files smaller than 1 MB are stored inline in the INode.
+</Info>
+
+### CHUNK_SIZE
+
+Size of each chunk for large files.
+
+```typescript
+export const CHUNK_SIZE = 256 * 1024; // 256 KB
+```
+
+<Info>
+  Defined in `ContentStore.ts:20`. Each large file is split into 256 KB chunks.
+</Info>
+
+---
+
+## ContentStore Class
+
+### Constructor
+
+```typescript
+new ContentStore(maxBytes?: number)
+```
+
+<ParamField path="maxBytes" type="number" default="67108864">
+  Maximum cache size in bytes (default: 64 MB)
+</ParamField>
+
+**Example:**
+
+```typescript
+// Default 64 MB cache
+const store = new ContentStore();
+
+// Custom 128 MB cache
+const largeStore = new ContentStore(128 * 1024 * 1024);
+```
+
+---
+
+## Methods
+
+### get
+
+Retrieves a blob by hash. Updates access time for LRU.
+
+```typescript
+get(hash: string): Uint8Array | null
+```
+
+<ParamField path="hash" type="string" required>
+  The content hash of the chunk
+</ParamField>
+
+<ResponseField name="return" type="Uint8Array | null">
+  The chunk data, or `null` if not in cache
+</ResponseField>
+
+**Example:**
+
+```typescript
+const chunk = store.get('a1b2c3d4e5f67890');
+if (chunk) {
+  console.log('Found chunk:', chunk.byteLength, 'bytes');
+} else {
+  console.log('Chunk not in cache');
+}
+```
+
+---
+
+### put
+
+Stores a blob and returns its hash. Automatically deduplicates.
+
+```typescript
+put(data: Uint8Array): string
+```
+
+<ParamField path="data" type="Uint8Array" required>
+  The chunk data to store
+</ParamField>
+
+<ResponseField name="return" type="string">
+  The content hash (16-character hex string)
+</ResponseField>
+
+**Example:**
+
+```typescript
+const data = new Uint8Array([1, 2, 3, 4, 5]);
+const hash = store.put(data);
+console.log('Stored with hash:', hash);
+
+// Duplicate data returns same hash without storing twice
+const hash2 = store.put(data);
+console.log(hash === hash2); // true
+```
+
+<Note>
+  Triggers LRU eviction if total cache size exceeds `maxBytes`
+</Note>
+
+---
+
+### delete
+
+Removes a blob from the cache.
+
+```typescript
+delete(hash: string): void
+```
+
+<ParamField path="hash" type="string" required>
+  The content hash to delete
+</ParamField>
+
+**Example:**
+
+```typescript
+store.delete('a1b2c3d4e5f67890');
+console.log(store.has('a1b2c3d4e5f67890')); // false
+```
+
+---
+
+### has
+
+Checks if a hash exists in the cache.
+
+```typescript
+has(hash: string): boolean
+```
+
+<ParamField path="hash" type="string" required>
+  The content hash to check
+</ParamField>
+
+<ResponseField name="return" type="boolean">
+  `true` if the hash exists, `false` otherwise
+</ResponseField>
+
+---
+
+### size
+
+Current total bytes stored in cache.
+
+```typescript
+get size(): number
+```
+
+<ResponseField name="return" type="number">
+  Total bytes currently cached
+</ResponseField>
+
+**Example:**
+
+```typescript
+console.log(`Cache using ${store.size} / ${64 * 1024 * 1024} bytes`);
+```
+
+---
+
+### count
+
+Number of chunks in cache.
+
+```typescript
+get count(): number
+```
+
+<ResponseField name="return" type="number">
+  Number of cached entries
+</ResponseField>
+
+**Example:**
+
+```typescript
+console.log(`${store.count} chunks in cache`);
+```
+
+---
+
+## Chunking Methods
+
+### storeChunked
+
+Splits data into chunks and stores each, returning a manifest.
+
+```typescript
+storeChunked(data: Uint8Array): ChunkRef[]
+```
+
+<ParamField path="data" type="Uint8Array" required>
+  The data to chunk and store
+</ParamField>
+
+<ResponseField name="return" type="ChunkRef[]">
+  Array of chunk references with hash and size
+</ResponseField>
+
+**Example:**
+
+```typescript
+const largeFile = new Uint8Array(2 * 1024 * 1024); // 2 MB
+const chunks = store.storeChunked(largeFile);
+
+console.log(`Split into ${chunks.length} chunks`);
+chunks.forEach((chunk, i) => {
+  console.log(`Chunk ${i}: ${chunk.hash} (${chunk.size} bytes)`);
+});
+```
+
+---
+
+### loadChunked
+
+Reassembles data from a chunk manifest.
+
+```typescript
+loadChunked(chunks: ChunkRef[]): Uint8Array | null
+```
+
+<ParamField path="chunks" type="ChunkRef[]" required>
+  Array of chunk references to reassemble
+</ParamField>
+
+<ResponseField name="return" type="Uint8Array | null">
+  The reassembled data, or `null` if any chunk is missing
+</ResponseField>
+
+**Example:**
+
+```typescript
+const data = store.loadChunked(chunks);
+if (data) {
+  console.log('Reassembled:', data.byteLength, 'bytes');
+} else {
+  console.error('Missing chunks - may have been evicted');
+}
+```
+
+<Warning>
+  Returns `null` if any chunk has been evicted from cache. Ensure sufficient cache size for active files.
+</Warning>
+
+---
+
+### deleteChunked
+
+Removes all chunks in a manifest from the cache.
+
+```typescript
+deleteChunked(chunks: ChunkRef[]): void
+```
+
+<ParamField path="chunks" type="ChunkRef[]" required>
+  Array of chunk references to delete
+</ParamField>
+
+**Example:**
+
+```typescript
+// Delete all chunks for a file
+store.deleteChunked(fileNode.chunks);
+```
+
+---
+
+## ChunkRef Interface
+
+Descriptor for a single chunk.
+
+```typescript
+interface ChunkRef {
+  hash: string;  // Content hash
+  size: number;  // Chunk size in bytes
+}
+```
+
+**Example:**
+
+```typescript
+const chunkRef: ChunkRef = {
+  hash: 'a1b2c3d4e5f67890',
+  size: 262144  // 256 KB
+};
+```
+
+---
+
+## LRU Eviction
+
+ContentStore automatically evicts least-recently-used chunks when the cache exceeds `maxBytes`.
+
+### How it works:
+
+1. **Access tracking:** Each `get()` or `put()` updates a monotonic access counter
+2. **Eviction trigger:** When `totalBytes > maxBytes` after a `put()`
+3. **Sorting:** Entries are sorted by access time (oldest first)
+4. **Removal:** Oldest entries are deleted until under budget
+
+**Example scenario:**
+
+```typescript
+const store = new ContentStore(1024); // 1 KB cache
+
+// Fill cache
+const chunk1 = store.put(new Uint8Array(512)); // 512 bytes
+const chunk2 = store.put(new Uint8Array(512)); // 512 bytes (total: 1024)
+
+// Access chunk1 (updates its access time)
+store.get(chunk1);
+
+// Add new chunk - triggers eviction of chunk2 (least recently used)
+const chunk3 = store.put(new Uint8Array(512)); // 512 bytes
+
+console.log(store.has(chunk1)); // true (recently accessed)
+console.log(store.has(chunk2)); // false (evicted)
+console.log(store.has(chunk3)); // true (just added)
+```
+
+<Info>
+  Access counter is monotonic, not wall-clock time. See `ContentStore.ts:33` and `ContentStore.ts:38`
+</Info>
+
+---
+
+## Usage with VFS
+
+Typical integration with the virtual filesystem:
+
+```typescript
+import { ContentStore, CHUNK_THRESHOLD, CHUNK_SIZE } from './ContentStore.js';
+import type { INode } from '../vfs/types.js';
+
+const contentStore = new ContentStore(64 * 1024 * 1024); // 64 MB
+
+// Writing a large file
+function writeFile(node: INode, data: Uint8Array): void {
+  if (data.byteLength >= CHUNK_THRESHOLD) {
+    // Large file: chunk it
+    node.chunks = contentStore.storeChunked(data);
+    node.storedSize = data.byteLength;
+    node.data = new Uint8Array(0); // Clear inline data
+  } else {
+    // Small file: store inline
+    node.data = data;
+    node.chunks = undefined;
+  }
+  node.mtime = Date.now();
+}
+
+// Reading a file
+function readFile(node: INode): Uint8Array | null {
+  if (node.chunks && node.chunks.length > 0) {
+    // Large file: reassemble chunks
+    return contentStore.loadChunked(node.chunks);
+  } else {
+    // Small file: return inline data
+    return node.data;
+  }
+}
+
+// Deleting a file
+function deleteFile(node: INode): void {
+  if (node.chunks && node.chunks.length > 0) {
+    contentStore.deleteChunked(node.chunks);
+  }
+}
+```
+
+---
+
+## Performance Characteristics
+
+| Operation | Time Complexity | Notes |
+|-----------|----------------|-------|
+| `get()` | O(1) | Map lookup |
+| `put()` | O(1) amortized | O(n) when eviction triggered |
+| `delete()` | O(1) | Map deletion |
+| `has()` | O(1) | Map lookup |
+| `storeChunked()` | O(n/CHUNK_SIZE) | n = data size |
+| `loadChunked()` | O(k) | k = number of chunks |
+| Eviction | O(n log n) | n = cache entries (sorting) |
+
+<Tip>
+  For best performance, set `maxBytes` large enough to hold all active file chunks. Frequent eviction and reloading degrades performance.
+</Tip>
+
+---
+
+## Memory Management
+
+### Choosing cache size:
+
+```typescript
+// Minimal (testing)
+const tiny = new ContentStore(1 * 1024 * 1024); // 1 MB
+
+// Default (balanced)
+const balanced = new ContentStore(); // 64 MB
+
+// Large (memory-rich environments)
+const large = new ContentStore(256 * 1024 * 1024); // 256 MB
+```
+
+### Monitoring usage:
+
+```typescript
+function logCacheStats(store: ContentStore): void {
+  const usedMB = (store.size / (1024 * 1024)).toFixed(2);
+  const maxMB = (64).toFixed(2); // Assuming default 64 MB
+  const utilization = ((store.size / (64 * 1024 * 1024)) * 100).toFixed(1);
+  
+  console.log(`Cache: ${store.count} chunks, ${usedMB}/${maxMB} MB (${utilization}%)`);
+}
+
+setInterval(() => logCacheStats(contentStore), 5000);
+```
+
+<Warning>
+  If chunks are frequently evicted and then needed again, consider increasing `maxBytes` or reducing `CHUNK_SIZE` to improve cache hit rate.
+</Warning>

@@ -1,0 +1,658 @@
+---
+title: Virtual Filesystem
+description: In-memory Unix-like filesystem with persistence, mounts, and large file support
+---
+
+The Virtual Filesystem (VFS) is an in-memory implementation of a Unix-like filesystem tree. It provides the storage layer for all file operations in Lifo.
+
+## Class Definition
+
+```typescript
+export class VFS {
+  private root: INode;
+  private mounts: MountEntry[];
+  private emitter: EventEmitter;
+  readonly contentStore: ContentStore;
+  onChange?: () => void;
+
+  constructor(contentStore?: ContentStore)
+  
+  // File operations
+  readFile(path: string): Uint8Array
+  readFileString(path: string): string
+  writeFile(path: string, content: string | Uint8Array): void
+  appendFile(path: string, content: string | Uint8Array): void
+  unlink(path: string): void
+  rename(oldPath: string, newPath: string): void
+  copyFile(src: string, dest: string): void
+  touch(path: string): void
+  exists(path: string): boolean
+  stat(path: string): Stat
+  
+  // Directory operations
+  mkdir(path: string, options?: { recursive?: boolean }): void
+  rmdir(path: string): void
+  readdir(path: string): Dirent[]
+  readdirStat(path: string): Array<Dirent & Stat>
+  rmdirRecursive(path: string): void
+  
+  // Mount system
+  mount(path: string, provider: VirtualProvider | MountProvider): void
+  unmount(path: string): void
+  
+  // Watch API
+  watch(listener: VFSWatchListener): () => void
+  watch(path: string, listener: VFSWatchListener): () => void
+  
+  // Persistence
+  getRoot(): INode
+  loadFromSerialized(root: INode): void
+}
+```
+
+Location: `src/kernel/vfs/VFS.ts:25`
+
+## Core Concepts
+
+### INodes
+
+The VFS represents files and directories as INodes (index nodes), just like Unix:
+
+```typescript
+interface INode {
+  type: 'file' | 'directory';
+  name: string;
+  data: Uint8Array;                    // File content (or empty)
+  children: Map<string, INode>;        // Directory entries
+  ctime: number;                       // Creation time (ms since epoch)
+  mtime: number;                       // Modification time
+  mode: number;                        // Unix permissions (octal, e.g. 0o644)
+  mime?: string;                       // MIME type (auto-detected)
+  chunks?: ChunkRef[];                 // Large file chunk manifest
+  storedSize?: number;                 // Size when chunked
+}
+```
+
+See `src/kernel/vfs/types.ts:19-31`.
+
+**Key design decisions:**
+
+- **In-memory tree**: The entire directory structure is a JavaScript object graph
+- **Map-based children**: Fast lookups (O(1) vs O(n) for arrays)
+- **Uint8Array data**: Binary-safe, works with text and binary files
+- **Chunked large files**: Files ≥1MB are split into chunks to avoid memory pressure
+
+### File Size Handling
+
+The VFS uses two strategies based on file size:
+
+**Small files (&lt;1MB):**
+
+```typescript
+node.data = new Uint8Array([...fileContents]);
+```
+
+Stored inline in the INode's `data` property.
+
+**Large files (≥1MB):**
+
+```typescript
+node.chunks = contentStore.storeChunked(data);
+node.storedSize = data.byteLength;
+node.data = new Uint8Array(0);  // INode stays lightweight
+```
+
+Split into 256KB chunks, stored in a content-addressable `ContentStore` (hash map). The INode holds only the chunk manifest.
+
+See `src/kernel/vfs/VFS.ts:259-273` and `src/kernel/storage/ContentStore.ts`.
+
+<Note>
+The chunk threshold (1MB) is defined in `src/kernel/storage/ContentStore.ts:3` as `CHUNK_THRESHOLD`.
+</Note>
+
+## File Operations
+
+### Reading Files
+
+```typescript
+// Binary read
+const data: Uint8Array = vfs.readFile('/path/to/file.bin');
+
+// Text read
+const text: string = vfs.readFileString('/path/to/file.txt');
+```
+
+Implementation (`src/kernel/vfs/VFS.ts:192-217`):
+
+1. Check if path matches a mounted provider
+2. If mounted, delegate to provider
+3. Otherwise, resolve the INode
+4. If chunked, reassemble from `ContentStore`
+5. If inline, return `node.data`
+
+### Writing Files
+
+```typescript
+vfs.writeFile('/path/to/file.txt', 'Hello, world!');
+vfs.writeFile('/path/to/data.bin', new Uint8Array([0x00, 0xFF]));
+```
+
+Implementation (`src/kernel/vfs/VFS.ts:219-254`):
+
+1. Check if path matches a mounted provider
+2. Encode string content to `Uint8Array` if needed
+3. Resolve parent directory
+4. Auto-detect MIME type from filename
+5. If file exists, update it (clean up old chunks if needed)
+6. If file is new, create INode and add to parent
+7. Store content (inline or chunked based on size)
+8. Emit watch event
+
+**MIME type detection:**
+
+```typescript
+const mime = getMimeType('file.json');  // 'application/json'
+const mime = getMimeType('file.txt');   // 'text/plain'
+const mime = getMimeType('file.bin');   // 'application/octet-stream'
+```
+
+See `src/utils/mime.ts`.
+
+### Appending to Files
+
+```typescript
+vfs.appendFile('/var/log/app.log', 'New log entry\n');
+```
+
+Implementation (`src/kernel/vfs/VFS.ts:275-308`):
+
+1. Read existing content (handling chunked files)
+2. Concatenate new content
+3. Re-chunk if needed (may promote small→large)
+4. Update INode
+
+### Deleting Files
+
+```typescript
+vfs.unlink('/path/to/file.txt');
+```
+
+Implementation (`src/kernel/vfs/VFS.ts:340-368`):
+
+1. Resolve parent and filename
+2. Check file exists and is not a directory
+3. Clean up chunks if chunked
+4. Remove from parent's children map
+5. Emit watch event
+
+### Renaming/Moving Files
+
+```typescript
+vfs.rename('/old/path.txt', '/new/path.txt');
+```
+
+Implementation (`src/kernel/vfs/VFS.ts:370-405`):
+
+1. Resolve source and destination parents
+2. Move INode from source to destination
+3. Update INode's `name` and `mtime`
+4. Emit watch event with both paths
+
+<Info>
+Rename is atomic within the in-memory tree. Cross-mount renames are not supported (you'll get an `EINVAL` error).
+</Info>
+
+### Copying Files
+
+```typescript
+vfs.copyFile('/src/file.txt', '/dest/file.txt');
+```
+
+Implementation (`src/kernel/vfs/VFS.ts:407-421`):
+
+1. Read source file (handling mounts and chunks)
+2. Write to destination (delegates to `writeFile()`)
+
+This works across mount boundaries (copies data from one mount to another).
+
+### Checking Existence
+
+```typescript
+if (vfs.exists('/path/to/file.txt')) {
+  // ...
+}
+```
+
+Implementation (`src/kernel/vfs/VFS.ts:310-320`):
+
+Attempts to resolve the INode, returns `false` on `ENOENT` error.
+
+### Getting File Stats
+
+```typescript
+const stat = vfs.stat('/path/to/file.txt');
+// {
+//   type: 'file',
+//   size: 1234,
+//   ctime: 1234567890000,
+//   mtime: 1234567890000,
+//   mode: 0o644,
+//   mime: 'text/plain'
+// }
+```
+
+Implementation (`src/kernel/vfs/VFS.ts:322-338`).
+
+<Note>
+For large chunked files, `stat.size` comes from `node.storedSize`, not `node.data.length` (which is 0).
+</Note>
+
+## Directory Operations
+
+### Creating Directories
+
+```typescript
+vfs.mkdir('/new/directory');
+
+// Recursive (creates parent directories)
+vfs.mkdir('/path/to/nested/dir', { recursive: true });
+```
+
+Implementation (`src/kernel/vfs/VFS.ts:439-480`).
+
+Recursive mode creates intermediate directories as needed (like `mkdir -p`).
+
+### Removing Directories
+
+```typescript
+vfs.rmdir('/empty/directory');
+```
+
+Fails if directory is not empty. Implementation: `src/kernel/vfs/VFS.ts:482-508`.
+
+**Recursive removal:**
+
+```typescript
+vfs.rmdirRecursive('/path/to/tree');  // Removes entire subtree
+```
+
+Implementation (`src/kernel/vfs/VFS.ts:586-602`):
+
+1. Recursively delete all children (depth-first)
+2. Delete directory itself
+
+### Reading Directories
+
+```typescript
+const entries = vfs.readdir('/path/to/dir');
+// [
+//   { name: 'file.txt', type: 'file' },
+//   { name: 'subdir', type: 'directory' }
+// ]
+```
+
+Implementation (`src/kernel/vfs/VFS.ts:510-550`).
+
+**With stats:**
+
+```typescript
+const entries = vfs.readdirStat('/path/to/dir');
+// [
+//   { name: 'file.txt', type: 'file', size: 1234, mtime: ..., mode: 0o644 },
+//   { name: 'subdir', type: 'directory', size: 0, mtime: ..., mode: 0o755 }
+// ]
+```
+
+Implementation (`src/kernel/vfs/VFS.ts:552-581`).
+
+This is used by `ls -l` to avoid separate `stat()` calls for each entry.
+
+## Mount System
+
+The mount system allows overlaying external data sources at any path in the VFS tree.
+
+### Architecture
+
+```mermaid
+graph TD
+    Root[VFS Root /] --> home[/home]
+    Root --> proc[/proc]
+    Root --> dev[/dev]
+    Root --> mnt[/mnt]
+    
+    proc -.-> ProcProvider[ProcProvider]
+    dev -.-> DevProvider[DevProvider]
+    mnt --> project[/mnt/project]
+    project -.-> NativeFs[NativeFsProvider]
+    
+    style proc fill:#ffe0b2
+    style dev fill:#ffe0b2
+    style project fill:#ffe0b2
+    style ProcProvider fill:#fff3e0
+    style DevProvider fill:#fff3e0
+    style NativeFs fill:#fff3e0
+```
+
+Mounts are stored as a sorted array (longest path first) for efficient lookup:
+
+```typescript
+interface MountEntry {
+  path: string;  // Normalized absolute path, e.g. "/mnt/project"
+  provider: VirtualProvider | MountProvider;
+}
+```
+
+See `src/kernel/vfs/VFS.ts:20-23`.
+
+### Mounting Providers
+
+```typescript
+vfs.mount('/proc', new ProcProvider());
+vfs.mount('/mnt/project', new NativeFsProvider('/host/path'));
+```
+
+Implementation (`src/kernel/vfs/VFS.ts:81-94`):
+
+1. Normalize path to absolute
+2. Replace if already mounted at exact path
+3. Add to mounts array
+4. Re-sort by path length (longest first)
+
+**Backward compatibility:**
+
+```typescript
+vfs.registerProvider('/proc', new ProcProvider());  // Old API
+```
+
+This calls `mount()` internally.
+
+### Unmounting
+
+```typescript
+vfs.unmount('/mnt/project');
+```
+
+Implementation (`src/kernel/vfs/VFS.ts:99-106`).
+
+### Provider Resolution
+
+On every file operation, the VFS checks if the path matches a mount:
+
+```typescript
+private getProvider(path: string): { provider: ..., subpath: string } | null {
+  const abs = this.toAbsolute(path);
+  for (const entry of this.mounts) {
+    if (abs === entry.path || abs.startsWith(entry.path + '/')) {
+      const subpath = abs === entry.path ? '/' : abs.slice(entry.path.length);
+      return { provider: entry.provider, subpath };
+    }
+  }
+  return null;
+}
+```
+
+See `src/kernel/vfs/VFS.ts:126-135`.
+
+**Example:**
+
+```
+Path: /mnt/project/src/main.ts
+Mount: /mnt/project → NativeFsProvider
+Subpath: /src/main.ts
+```
+
+The provider receives `/src/main.ts` as the argument to `readFile()`.
+
+### Provider Interfaces
+
+**Read-only provider:**
+
+```typescript
+interface VirtualProvider {
+  readFile(subpath: string): Uint8Array;
+  readFileString(subpath: string): string;
+  writeFile?(subpath: string, content: string | Uint8Array): void;  // Optional
+  exists(subpath: string): boolean;
+  stat(subpath: string): Stat;
+  readdir(subpath: string): Dirent[];
+}
+```
+
+See `src/kernel/vfs/types.ts:58-65`.
+
+**Full mount provider (read-write):**
+
+```typescript
+interface MountProvider extends VirtualProvider {
+  writeFile(subpath: string, content: string | Uint8Array): void;
+  unlink(subpath: string): void;
+  mkdir(subpath: string, options?: { recursive?: boolean }): void;
+  rmdir(subpath: string): void;
+  rename(oldSubpath: string, newSubpath: string): void;
+  copyFile(srcSubpath: string, destSubpath: string): void;
+}
+```
+
+See `src/kernel/vfs/types.ts:67-74`.
+
+### Example: Custom Provider
+
+```typescript
+class JsonDbProvider implements VirtualProvider {
+  constructor(private db: Record<string, any>) {}
+  
+  readFile(subpath: string): Uint8Array {
+    const value = this.db[subpath];
+    if (!value) throw new VFSError(ErrorCode.ENOENT, `'${subpath}': not found`);
+    return new TextEncoder().encode(JSON.stringify(value));
+  }
+  
+  readFileString(subpath: string): string {
+    return new TextDecoder().decode(this.readFile(subpath));
+  }
+  
+  exists(subpath: string): boolean {
+    return subpath in this.db;
+  }
+  
+  stat(subpath: string): Stat {
+    const content = this.readFileString(subpath);
+    return {
+      type: 'file',
+      size: content.length,
+      ctime: Date.now(),
+      mtime: Date.now(),
+      mode: 0o644,
+      mime: 'application/json',
+    };
+  }
+  
+  readdir(subpath: string): Dirent[] {
+    if (subpath !== '/') throw new VFSError(ErrorCode.ENOTDIR, 'flat db');
+    return Object.keys(this.db).map(name => ({ name, type: 'file' }));
+  }
+}
+
+// Usage:
+const db = { '/user': { name: 'Alice' }, '/post': { title: 'Hello' } };
+vfs.mount('/db', new JsonDbProvider(db));
+
+// Now:
+const user = vfs.readFileString('/db/user');  // '{"name":"Alice"}'
+```
+
+## Watch API
+
+The VFS emits events on file/directory changes.
+
+### Global Watch
+
+```typescript
+const unwatch = vfs.watch((event) => {
+  console.log(event.type, event.path);
+});
+
+// Later:
+unwatch();
+```
+
+Implementation (`src/kernel/vfs/VFS.ts:45-52`).
+
+### Path-Specific Watch
+
+```typescript
+const unwatch = vfs.watch('/home/user', (event) => {
+  console.log('Change in /home/user:', event);
+});
+```
+
+Only emits events for paths under `/home/user`.
+
+Implementation (`src/kernel/vfs/VFS.ts:56-68`).
+
+### Event Types
+
+```typescript
+interface VFSWatchEvent {
+  type: 'create' | 'modify' | 'delete' | 'rename';
+  path: string;      // New path (or only path for create/modify/delete)
+  oldPath?: string;  // Old path (only for 'rename')
+  fileType: 'file' | 'directory';
+}
+```
+
+See `src/kernel/vfs/types.ts:5-10`.
+
+**Example events:**
+
+```typescript
+{ type: 'create', path: '/home/user/file.txt', fileType: 'file' }
+{ type: 'modify', path: '/home/user/file.txt', fileType: 'file' }
+{ type: 'delete', path: '/home/user/file.txt', fileType: 'file' }
+{ type: 'rename', path: '/new.txt', oldPath: '/old.txt', fileType: 'file' }
+```
+
+<Note>
+Watch events are fired synchronously during VFS operations. Use them for cache invalidation, but avoid heavy work in listeners.
+</Note>
+
+## Error Handling
+
+The VFS throws `VFSError` instances with POSIX-like error codes:
+
+```typescript
+class VFSError extends Error {
+  code: 'ENOENT' | 'EEXIST' | 'ENOTDIR' | 'EISDIR' | 'ENOTEMPTY' | 'EINVAL';
+}
+```
+
+See `src/kernel/vfs/types.ts:76-84`.
+
+**Common errors:**
+
+- `ENOENT`: File or directory not found
+- `EEXIST`: File or directory already exists
+- `ENOTDIR`: Not a directory (tried to `cd` into a file)
+- `EISDIR`: Is a directory (tried to `cat` a directory)
+- `ENOTEMPTY`: Directory not empty (can't `rmdir`)
+- `EINVAL`: Invalid argument
+
+**Example:**
+
+```typescript
+try {
+  vfs.readFile('/nonexistent.txt');
+} catch (e) {
+  if (e instanceof VFSError && e.code === 'ENOENT') {
+    console.log('File not found');
+  }
+}
+```
+
+## Persistence
+
+The VFS supports serialization for persistence:
+
+### Saving
+
+```typescript
+const root = vfs.getRoot();
+const serialized = JSON.stringify(root, (key, value) => {
+  if (value instanceof Map) {
+    return { __type: 'Map', entries: Array.from(value.entries()) };
+  }
+  if (value instanceof Uint8Array) {
+    return { __type: 'Uint8Array', data: Array.from(value) };
+  }
+  return value;
+});
+
+// Save to IndexedDB / localStorage / etc.
+```
+
+See `src/kernel/persistence/serializer.ts` for the actual implementation.
+
+### Loading
+
+```typescript
+const parsed = JSON.parse(serialized, reviver);
+vfs.loadFromSerialized(parsed);
+```
+
+The `loadFromSerialized()` method replaces the entire VFS tree.
+
+<Info>
+Persistence is handled automatically by the Kernel's `PersistenceManager`. You rarely need to call these methods directly.
+</Info>
+
+## Performance Tips
+
+### Fast Directory Traversal
+
+Use `readdirStat()` instead of `readdir()` + `stat()` for each entry:
+
+```typescript
+// ❌ Slow (N+1 queries)
+const entries = vfs.readdir('/dir');
+for (const entry of entries) {
+  const stat = vfs.stat(`/dir/${entry.name}`);
+  console.log(entry.name, stat.size);
+}
+
+// ✅ Fast (1 query)
+const entries = vfs.readdirStat('/dir');
+for (const entry of entries) {
+  console.log(entry.name, entry.size);
+}
+```
+
+### Large File Handling
+
+For files >1MB, prefer streaming or chunked processing:
+
+```typescript
+// ❌ Loads entire file into memory
+const data = vfs.readFile('/large.bin');
+
+// ✅ Process in chunks (if command supports streaming)
+for await (const chunk of streamFile('/large.bin')) {
+  process(chunk);
+}
+```
+
+### Avoiding Deep Recursion
+
+Recursive directory operations can be slow for deep trees:
+
+```typescript
+// ❌ Slow for deep trees
+vfs.rmdirRecursive('/very/deep/tree');
+
+// ✅ Better: use iterative traversal (custom implementation)
+```
+
+## Related
+
+- [Kernel](/concepts/kernel) - VFS initialization and persistence
+- [Architecture](/concepts/architecture#virtual-filesystem-vfs) - VFS in system architecture
+- [Commands](/guides/commands) - How commands use the VFS

@@ -1,0 +1,131 @@
+---
+title: "Introduction"
+description: "A Linux-like operating system that runs natively in the browser"
+---
+
+## Welcome to Lifo
+
+Lifo is a browser-native operating system where the browser runtime is the kernel and Web APIs are the syscalls. It's not a VM or emulator—it's a reimagination of Unix principles for the modern web.
+
+```
+┌──────────────────────────────────────────────────┐
+│                  Terminal UI                      │  xterm.js + Tokyo Night theme
+├──────────────────────────────────────────────────┤
+│                    Shell                          │  bash-like interpreter
+├──────────────────────────────────────────────────┤
+│            Command Registry / $PATH              │  ES module command map
+├───────────┬────────────┬─────────────────────────┤
+│ Coreutils │ Net Cmds   │ User Packages           │  each cmd = async function
+├───────────┴────────────┴─────────────────────────┤
+│          Node.js Compatibility Layer             │  thin wrappers over OS APIs
+├──────────────────────────────────────────────────┤
+│           Virtual Filesystem (VFS)               │  in-memory + IndexedDB persistence
+├──────────────────────────────────────────────────┤
+│              Kernel API Layer                    │  unified browser API wrappers
+├──────────────────────────────────────────────────┤
+│               Browser APIs                       │  fetch, streams, OPFS, etc.
+└──────────────────────────────────────────────────┘
+```
+
+## Key Features
+
+<CardGroup cols={2}>
+  <Card title="60+ Unix Commands" icon="terminal">
+    Complete suite of filesystem, text processing, network, and system commands—all running in pure JavaScript.
+  </Card>
+  
+  <Card title="Virtual Filesystem" icon="folder-tree">
+    Full POSIX-like VFS with permissions, symlinks, hard links, and IndexedDB persistence.
+  </Card>
+  
+  <Card title="bash-like Shell" icon="code">
+    Pipes, redirects, globs, variables, job control, tab completion, and command history.
+  </Card>
+  
+  <Card title="Node.js Compatibility" icon="node-js">
+    Run JavaScript files with `node` command using 15 shimmed standard library modules.
+  </Card>
+  
+  <Card title="Browser-Native" icon="globe">
+    No WASM, no emulation—pure JavaScript leveraging Web APIs for maximum performance.
+  </Card>
+  
+  <Card title="Package Manager" icon="box">
+    Install and manage WebAssembly packages with the built-in `lifo` package manager.
+  </Card>
+</CardGroup>
+
+## What Makes Lifo Different?
+
+Unlike traditional web-based terminals that run Linux in a VM or WebAssembly, Lifo reimplements the Unix philosophy using browser APIs:
+
+- **Browser as Kernel**: Uses `fetch`, `ReadableStream`, `IndexedDB`, and other Web APIs as system calls
+- **No Compilation**: Pure TypeScript/JavaScript—no C code, no WASM for core functionality
+- **Truly Portable**: Runs anywhere modern JavaScript runs—Chrome, Firefox, Safari, Node.js
+- **Lightweight**: Core library is under 200KB minified
+
+## Quick Example
+
+Here's a simple example of using Lifo programmatically:
+
+```typescript
+import { Sandbox } from '@lifo-sh/core';
+
+const sandbox = await Sandbox.create();
+
+// Run commands
+const result = await sandbox.commands.run('echo "Hello, Lifo!"');
+console.log(result.stdout); // "Hello, Lifo!\n"
+
+// Work with the filesystem
+await sandbox.fs.writeFile('/tmp/greeting.txt', 'Welcome to Lifo');
+const content = await sandbox.fs.readFile('/tmp/greeting.txt');
+console.log(content); // "Welcome to Lifo"
+
+// Use pipes and redirects
+await sandbox.commands.run('ls /etc | grep profile > /tmp/output.txt');
+const output = await sandbox.fs.readFile('/tmp/output.txt');
+```
+
+## Get Started
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Get up and running with Lifo in under 5 minutes
+  </Card>
+  
+  <Card title="Installation" icon="download" href="/installation">
+    Install Lifo via npm, yarn, or pnpm
+  </Card>
+  
+  <Card title="Core Concepts" icon="book" href="/concepts/architecture">
+    Learn about Lifo's architecture and design principles
+  </Card>
+  
+  <Card title="API Reference" icon="code" href="/api/sandbox">
+    Explore the complete API documentation
+  </Card>
+</CardGroup>
+
+## Use Cases
+
+<Tip>
+Lifo is perfect for:
+- **Interactive Tutorials**: Embed a fully functional terminal in your documentation
+- **Code Playgrounds**: Let users experiment with file operations and shell commands
+- **Browser-based IDEs**: Build development environments that run entirely in the browser
+- **Testing Environments**: Create isolated sandboxes for running and testing code
+- **Educational Tools**: Teach Unix concepts without requiring installation
+</Tip>
+
+## Community
+
+<CardGroup cols={2}>
+  <Card title="GitHub" icon="github" href="https://github.com/lifo-sh/lifo">
+    View source code and contribute
+  </Card>
+  
+  <Card title="Issues" icon="circle-exclamation" href="https://github.com/lifo-sh/lifo/issues">
+    Report bugs and request features
+  </Card>
+</CardGroup>

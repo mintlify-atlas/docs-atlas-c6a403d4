@@ -1,0 +1,355 @@
+---
+title: Network Commands
+description: HTTP requests and network utilities in Lifo
+---
+
+Network commands enable making HTTP requests, downloading files, and performing DNS lookups from the browser-based terminal.
+
+## HTTP Clients
+
+### curl
+
+Transfer data from or to a server using various protocols.
+
+**Usage:** `curl [options] url`
+
+**Options:**
+- `-X method` - HTTP method (GET, POST, PUT, DELETE, etc.)
+- `-H header` - Add custom header
+- `-d data` - Send data in request body (auto sets POST)
+- `-o file` - Write output to file
+- `-s, --silent` - Silent mode (hide progress)
+- `-L, --location` - Follow redirects
+- `-I, --head` - Show headers only
+
+**Examples:**
+
+```bash
+# Simple GET request
+curl https://api.example.com/data
+
+# With custom header
+curl -H "Authorization: Bearer token123" https://api.example.com/protected
+
+# POST request with data
+curl -X POST -d '{"name":"John"}' -H "Content-Type: application/json" https://api.example.com/users
+
+# Save to file
+curl -o output.json https://api.example.com/data
+
+# Silent mode
+curl -s https://api.example.com/data
+
+# Follow redirects
+curl -L https://example.com
+
+# Show headers only
+curl -I https://example.com
+
+# Multiple headers
+curl -H "Accept: application/json" -H "User-Agent: MyApp/1.0" https://api.example.com
+```
+
+**Output example:**
+
+```
+$ curl https://api.github.com/users/octocat
+{
+  "login": "octocat",
+  "id": 1,
+  "name": "The Octocat",
+  "company": "@github"
+}
+```
+
+**CORS Note:**
+
+Browser-based curl requests are subject to CORS policies. The target server must include appropriate CORS headers to allow cross-origin requests:
+
+```
+Access-Control-Allow-Origin: *
+```
+
+If you encounter CORS errors, the server must be configured to allow requests from your origin.
+
+### wget
+
+Download files from the web.
+
+**Usage:** `wget [options] url`
+
+**Options:**
+- `-O file` - Write output to file
+- `-q` - Quiet mode
+
+**Examples:**
+
+```bash
+# Download file
+wget https://example.com/file.zip
+
+# Save with custom name
+wget -O myfile.zip https://example.com/download.zip
+
+# Quiet mode
+wget -q https://example.com/data.json
+
+# Download to specific location
+wget -O /tmp/download.pdf https://example.com/document.pdf
+```
+
+**Output example:**
+
+```
+$ wget https://example.com/data.json
+Downloading https://example.com/data.json...
+Saved to: data.json
+```
+
+## Network Diagnostics
+
+### ping
+
+Test network connectivity and measure latency.
+
+**Usage:** `ping [options] host`
+
+**Options:**
+- `-c count` - Number of pings (default: 4)
+
+**Examples:**
+
+```bash
+# Ping host
+ping example.com
+
+# Specific count
+ping -c 10 example.com
+
+# Ping IP address
+ping 8.8.8.8
+```
+
+**Output example:**
+
+```
+$ ping -c 4 example.com
+PING example.com (93.184.216.34): 56 data bytes
+64 bytes from 93.184.216.34: icmp_seq=0 ttl=56 time=12.3 ms
+64 bytes from 93.184.216.34: icmp_seq=1 ttl=56 time=11.8 ms
+64 bytes from 93.184.216.34: icmp_seq=2 ttl=56 time=12.1 ms
+64 bytes from 93.184.216.34: icmp_seq=3 ttl=56 time=12.5 ms
+
+--- example.com ping statistics ---
+4 packets transmitted, 4 received, 0% packet loss
+round-trip min/avg/max = 11.8/12.2/12.5 ms
+```
+
+### dig
+
+DNS lookup utility for querying DNS servers.
+
+**Usage:** `dig [options] domain [type]`
+
+**Query types:**
+- `A` - IPv4 address (default)
+- `AAAA` - IPv6 address
+- `MX` - Mail exchange
+- `NS` - Name servers
+- `TXT` - Text records
+- `CNAME` - Canonical name
+- `SOA` - Start of authority
+
+**Examples:**
+
+```bash
+# Basic lookup
+dig example.com
+
+# Specific record type
+dig example.com A
+dig example.com MX
+dig example.com TXT
+
+# IPv6 address
+dig example.com AAAA
+
+# Name servers
+dig example.com NS
+
+# Short answer
+dig example.com +short
+
+# Multiple queries
+dig example.com A example.com MX
+```
+
+**Output example:**
+
+```
+$ dig example.com A
+
+; <<>> DiG 9.10.6 <<>> example.com A
+;; Got answer:
+;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 12345
+
+;; QUESTION SECTION:
+;example.com.                   IN      A
+
+;; ANSWER SECTION:
+example.com.            3600    IN      A       93.184.216.34
+
+;; Query time: 45 msec
+;; WHEN: Sun Mar 01 12:00:00 UTC 2026
+;; MSG SIZE  rcvd: 56
+```
+
+**Short output:**
+
+```
+$ dig example.com +short
+93.184.216.34
+```
+
+## Working with APIs
+
+### GET request
+
+```bash
+curl https://api.example.com/users/123
+```
+
+### POST JSON data
+
+```bash
+curl -X POST \
+  -H "Content-Type: application/json" \
+  -d '{"username":"john","email":"john@example.com"}' \
+  https://api.example.com/users
+```
+
+### Authentication
+
+```bash
+# Bearer token
+curl -H "Authorization: Bearer YOUR_TOKEN" \
+  https://api.example.com/protected
+
+# Basic auth
+curl -u username:password \
+  https://api.example.com/protected
+```
+
+### PUT request
+
+```bash
+curl -X PUT \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Updated Name"}' \
+  https://api.example.com/users/123
+```
+
+### DELETE request
+
+```bash
+curl -X DELETE https://api.example.com/users/123
+```
+
+### Download and extract
+
+```bash
+wget https://example.com/archive.tar.gz
+tar -xzf archive.tar.gz
+```
+
+## Common Patterns
+
+### Save API response
+
+```bash
+curl -s https://api.example.com/data | tee response.json
+```
+
+### Pretty print JSON
+
+```bash
+curl -s https://api.example.com/data | python -m json.tool
+```
+
+### Check HTTP status
+
+```bash
+curl -I https://example.com | head -1
+```
+
+### Test API endpoint
+
+```bash
+curl -X POST -H "Content-Type: application/json" \
+  -d @request.json \
+  https://api.example.com/test
+```
+
+### Download multiple files
+
+```bash
+for i in {1..5}; do
+  wget https://example.com/file$i.txt
+done
+```
+
+### DNS diagnostics
+
+```bash
+# Check all record types
+dig example.com ANY
+
+# Trace DNS resolution
+dig example.com +trace
+
+# Query specific DNS server
+dig @8.8.8.8 example.com
+```
+
+## Virtual Servers
+
+Lifo supports virtual HTTP servers for local development. Commands can interact with servers started within the terminal:
+
+```bash
+# In one terminal tab
+node server.js  # Starts server on port 3000
+
+# In another tab
+curl http://localhost:3000/api/data
+```
+
+Virtual servers enable full-stack development within the browser environment.
+
+## Error Handling
+
+### Connection errors
+
+```
+curl: (7) Failed to connect to example.com
+```
+
+This may indicate:
+- Invalid URL or hostname
+- Network connectivity issues
+- CORS restrictions (for browser-based requests)
+
+### CORS errors
+
+```
+Note: This may be a CORS restriction. The target server must allow cross-origin requests.
+```
+
+Solution: Ensure the API server includes appropriate CORS headers.
+
+### DNS resolution failures
+
+```
+dig: couldn't get address for 'invalid.domain': not found
+```
+
+Indicates the domain name does not exist or cannot be resolved.

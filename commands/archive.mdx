@@ -1,0 +1,451 @@
+---
+title: Archive Commands
+description: File compression and archive utilities in Lifo
+---
+
+Archive commands provide tools for creating, extracting, and managing compressed file archives.
+
+## Archive Creation and Extraction
+
+### tar
+
+Create, extract, and list tar archives.
+
+**Usage:** `tar [options] -f archive [files...]`
+
+**Options:**
+- `-c` - Create archive
+- `-x` - Extract archive
+- `-t` - List archive contents
+- `-z` - Compress/decompress with gzip
+- `-v` - Verbose output
+- `-f file` - Archive filename
+- `-C dir` - Change to directory before operation
+
+**Examples:**
+
+```bash
+# Create archive
+tar -cf archive.tar file1.txt file2.txt
+
+# Create with verbose output
+tar -cvf archive.tar documents/
+
+# Create compressed archive
+tar -czf archive.tar.gz directory/
+
+# Extract archive
+tar -xf archive.tar
+
+# Extract compressed archive
+tar -xzf archive.tar.gz
+
+# Extract to specific directory
+tar -xf archive.tar -C /tmp/
+
+# List contents
+tar -tf archive.tar
+
+# List compressed archive
+tar -tzf archive.tar.gz
+```
+
+**Output examples:**
+
+```
+$ tar -czf backup.tar.gz documents/
+$ ls -lh backup.tar.gz
+-rw-r--r-- 1 user user 1.2M Mar 01 12:30 backup.tar.gz
+
+$ tar -tzf backup.tar.gz
+documents/
+documents/file1.txt
+documents/file2.txt
+documents/subfolder/
+documents/subfolder/file3.txt
+```
+
+**Common tar patterns:**
+
+```bash
+# Backup with timestamp
+tar -czf backup-$(date +%Y%m%d).tar.gz /home/user/
+
+# Exclude files
+tar -czf archive.tar.gz --exclude='*.log' project/
+
+# Preserve permissions
+tar -czpf archive.tar.gz directory/
+```
+
+## Gzip Compression
+
+### gzip
+
+Compress files using gzip algorithm.
+
+**Usage:** `gzip [options] [file...]`
+
+**Options:**
+- `-d` - Decompress (same as gunzip)
+- `-c` - Write to stdout, keep original
+- `-k` - Keep original file
+- `-9` - Maximum compression
+- `-1` - Fast compression
+
+**Examples:**
+
+```bash
+# Compress file
+gzip file.txt
+# Creates: file.txt.gz (removes original)
+
+# Keep original
+gzip -k file.txt
+
+# Maximum compression
+gzip -9 file.txt
+
+# Compress to stdout
+gzip -c file.txt > file.txt.gz
+
+# Compress multiple files
+gzip file1.txt file2.txt file3.txt
+```
+
+**Output example:**
+
+```
+$ ls -lh
+-rw-r--r-- 1 user user 10M Mar 01 12:00 largefile.txt
+
+$ gzip largefile.txt
+
+$ ls -lh
+-rw-r--r-- 1 user user 2.1M Mar 01 12:00 largefile.txt.gz
+```
+
+### gunzip
+
+Decompress gzip files.
+
+**Usage:** `gunzip [options] [file...]`
+
+**Options:**
+- `-c` - Write to stdout, keep original
+- `-k` - Keep original file
+
+**Examples:**
+
+```bash
+# Decompress file
+gunzip file.txt.gz
+# Creates: file.txt (removes .gz)
+
+# Keep compressed file
+gunzip -k file.txt.gz
+
+# Decompress to stdout
+gunzip -c file.txt.gz
+
+# Decompress multiple files
+gunzip file1.txt.gz file2.txt.gz
+```
+
+**Output example:**
+
+```
+$ ls
+archive.txt.gz
+
+$ gunzip archive.txt.gz
+
+$ ls
+archive.txt
+```
+
+## Zip Archives
+
+### zip
+
+Package and compress files in zip format.
+
+**Usage:** `zip [options] archive.zip [files...]`
+
+**Options:**
+- `-r` - Recurse into directories
+- `-q` - Quiet mode
+- `-9` - Maximum compression
+- `-u` - Update existing archive
+- `-d` - Delete entries from archive
+
+**Examples:**
+
+```bash
+# Create zip archive
+zip archive.zip file1.txt file2.txt
+
+# Zip directory recursively
+zip -r archive.zip documents/
+
+# Maximum compression
+zip -9 -r archive.zip project/
+
+# Add files to existing archive
+zip archive.zip newfile.txt
+
+# Update archive
+zip -u archive.zip modified.txt
+
+# Quiet mode
+zip -q -r backup.zip /home/user/
+```
+
+**Output example:**
+
+```
+$ zip -r project.zip myproject/
+  adding: myproject/ (stored 0%)
+  adding: myproject/index.js (deflated 45%)
+  adding: myproject/package.json (deflated 32%)
+  adding: myproject/README.md (deflated 51%)
+
+$ ls -lh project.zip
+-rw-r--r-- 1 user user 45K Mar 01 12:30 project.zip
+```
+
+### unzip
+
+Extract compressed zip files.
+
+**Usage:** `unzip [options] archive.zip [files...]`
+
+**Options:**
+- `-d dir` - Extract to directory
+- `-l` - List archive contents
+- `-o` - Overwrite files without prompting
+- `-q` - Quiet mode
+
+**Examples:**
+
+```bash
+# Extract archive
+unzip archive.zip
+
+# Extract to specific directory
+unzip archive.zip -d /tmp/extract/
+
+# List contents without extracting
+unzip -l archive.zip
+
+# Extract specific file
+unzip archive.zip file.txt
+
+# Overwrite existing files
+unzip -o archive.zip
+
+# Quiet mode
+unzip -q archive.zip
+```
+
+**Output examples:**
+
+```
+$ unzip archive.zip
+Archive:  archive.zip
+  inflating: file1.txt
+  inflating: file2.txt
+  inflating: documents/report.pdf
+
+$ unzip -l archive.zip
+Archive:  archive.zip
+  Length      Date    Time    Name
+---------  ---------- -----   ----
+     1234  2026-03-01 12:00   file1.txt
+     5678  2026-03-01 12:15   file2.txt
+   123456  2026-03-01 12:30   documents/report.pdf
+---------                     -------
+   130368                     3 files
+```
+
+## Common Patterns
+
+### Backup and restore
+
+```bash
+# Create backup
+tar -czf backup-$(date +%Y%m%d).tar.gz /home/user/documents/
+
+# Restore backup
+tar -xzf backup-20260301.tar.gz -C /home/user/
+```
+
+### Compress log files
+
+```bash
+# Compress old logs
+find /var/log -name "*.log" -mtime +7 -exec gzip {} \;
+
+# Compress and keep original
+gzip -k application.log
+```
+
+### Archive with exclusions
+
+```bash
+# Exclude node_modules and .git
+tar -czf project.tar.gz \
+  --exclude='node_modules' \
+  --exclude='.git' \
+  project/
+```
+
+### Split large archives
+
+```bash
+# Create archive and split
+tar -czf - largedir/ | split -b 100M - archive.tar.gz.
+
+# Combine and extract
+cat archive.tar.gz.* | tar -xzf -
+```
+
+### Compare archives
+
+```bash
+# List contents
+tar -tzf archive1.tar.gz > list1.txt
+tar -tzf archive2.tar.gz > list2.txt
+diff list1.txt list2.txt
+```
+
+### Encrypt archives
+
+```bash
+# Encrypt with gpg
+tar -czf - documents/ | gpg -c > documents.tar.gz.gpg
+
+# Decrypt and extract
+gpg -d documents.tar.gz.gpg | tar -xzf -
+```
+
+### Verify archive integrity
+
+```bash
+# Test tar archive
+tar -tzf archive.tar.gz > /dev/null && echo "OK" || echo "Corrupted"
+
+# Test zip archive
+unzip -t archive.zip
+```
+
+### Extract single file
+
+```bash
+# From tar
+tar -xzf archive.tar.gz path/to/file.txt
+
+# From zip
+unzip archive.zip path/to/file.txt
+```
+
+## Archive Formats
+
+### Tar (Tape Archive)
+
+- Extension: `.tar`
+- Compressed: `.tar.gz`, `.tgz`, `.tar.bz2`
+- Preserves: permissions, ownership, directory structure
+- Best for: Unix/Linux file backups
+
+### Gzip
+
+- Extension: `.gz`
+- Single file compression
+- Fast and efficient
+- Best for: compressing individual files
+
+### Zip
+
+- Extension: `.zip`
+- Cross-platform compatibility
+- Built-in directory support
+- Best for: sharing files across different OS
+
+## Compression Levels
+
+```bash
+# Fast compression (level 1)
+gzip -1 file.txt
+zip -1 archive.zip files/
+
+# Balanced (default level 6)
+gzip file.txt
+zip archive.zip files/
+
+# Maximum compression (level 9)
+gzip -9 file.txt
+zip -9 archive.zip files/
+```
+
+## Performance Tips
+
+### Parallel compression
+
+```bash
+# Use pigz for parallel gzip
+tar -cf - directory/ | pigz > archive.tar.gz
+```
+
+### Exclude unnecessary files
+
+```bash
+tar -czf backup.tar.gz \
+  --exclude='*.tmp' \
+  --exclude='*.cache' \
+  --exclude='.DS_Store' \
+  project/
+```
+
+### Stream processing
+
+```bash
+# Compress and upload without storing locally
+tar -czf - documents/ | curl -T - https://example.com/upload
+
+# Download and extract directly
+curl https://example.com/archive.tar.gz | tar -xzf -
+```
+
+## Troubleshooting
+
+### Archive too large
+
+```bash
+# Use compression
+tar -czf archive.tar.gz largedir/
+
+# Split into parts
+tar -czf - largedir/ | split -b 1G - archive.tar.gz.part-
+```
+
+### Corrupted archive
+
+```bash
+# Test integrity
+gunzip -t archive.tar.gz
+unzip -t archive.zip
+
+# Attempt recovery
+tar -xzf archive.tar.gz --ignore-failed-read
+```
+
+### Permission errors
+
+```bash
+# Preserve permissions
+tar -czpf archive.tar.gz directory/
+
+# Extract with sudo
+sudo tar -xzf archive.tar.gz -C /protected/location/
+```

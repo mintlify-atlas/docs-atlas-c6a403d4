@@ -1,0 +1,480 @@
+---
+title: 'CommandRegistry'
+description: 'Command registration and resolution with lazy loading support'
+---
+
+## Overview
+
+The `CommandRegistry` class manages command registration and resolution. It supports both eager and lazy command loading, enabling efficient on-demand loading of commands.
+
+## Creating a Registry
+
+```typescript
+import { CommandRegistry, createDefaultRegistry } from '@lifo/core';
+
+// Empty registry
+const registry = new CommandRegistry();
+
+// Pre-populated with built-in commands
+const registry = createDefaultRegistry();
+```
+
+## Constructor
+
+```typescript
+constructor()
+```
+
+Creates an empty command registry.
+
+## Instance Methods
+
+### register()
+
+Register a command immediately.
+
+```typescript
+register(name: string, command: Command): void
+```
+
+<ParamField path="name" type="string" required>
+  Command name (e.g., "ls", "cat", "my-tool")
+</ParamField>
+
+<ParamField path="command" type="Command" required>
+  Command implementation function
+</ParamField>
+
+**Example:**
+
+```typescript
+import { CommandRegistry } from '@lifo/core';
+
+const registry = new CommandRegistry();
+
+// Register a simple command
+registry.register('hello', async (ctx) => {
+  ctx.stdout.write('Hello, World!\n');
+  return 0; // exit code
+});
+
+// Register a command with arguments
+registry.register('greet', async (ctx) => {
+  const name = ctx.args[0] || 'stranger';
+  ctx.stdout.write(`Hello, ${name}!\n`);
+  return 0;
+});
+
+// Register a command with VFS access
+registry.register('count-files', async (ctx) => {
+  const entries = ctx.vfs.readdir(ctx.cwd);
+  const files = entries.filter(e => e.type === 'file');
+  ctx.stdout.write(`Files: ${files.length}\n`);
+  return 0;
+});
+```
+
+### registerLazy()
+
+Register a command with lazy loading. The command is only loaded when first used.
+
+```typescript
+registerLazy(name: string, loader: () => Promise<{ default: Command }>): void
+```
+
+<ParamField path="name" type="string" required>
+  Command name
+</ParamField>
+
+<ParamField path="loader" type="() => Promise<{ default: Command }>" required>
+  Async function that loads and returns the command
+</ParamField>
+
+**Example:**
+
+```typescript
+// Lazy load a command
+registry.registerLazy('ls', () => import('./commands/ls.js'));
+
+// The command module is only loaded when 'ls' is first executed
+// This reduces initial bundle size and improves startup time
+```
+
+### unregister()
+
+Unregister a command.
+
+```typescript
+unregister(name: string): void
+```
+
+<ParamField path="name" type="string" required>
+  Command name to unregister
+</ParamField>
+
+**Example:**
+
+```typescript
+registry.register('temp-command', async (ctx) => 0);
+registry.unregister('temp-command');
+```
+
+### resolve()
+
+Resolve a command by name. Loads lazy commands if needed.
+
+```typescript
+async resolve(name: string): Promise<Command | undefined>
+```
+
+<ParamField path="name" type="string" required>
+  Command name to resolve
+</ParamField>
+
+<ResponseField name="command" type="Command | undefined">
+  Command function, or undefined if not found
+</ResponseField>
+
+**Example:**
+
+```typescript
+const ls = await registry.resolve('ls');
+if (ls) {
+  const exitCode = await ls({
+    args: ['-la'],
+    cwd: '/home/user',
+    env: { HOME: '/home/user' },
+    vfs: vfs,
+    stdout: { write: (s) => console.log(s) },
+    stderr: { write: (s) => console.error(s) },
+    signal: new AbortController().signal
+  });
+}
+```
+
+### list()
+
+List all registered command names.
+
+```typescript
+list(): string[]
+```
+
+<ResponseField name="names" type="string[]">
+  Sorted array of command names
+</ResponseField>
+
+**Example:**
+
+```typescript
+const registry = createDefaultRegistry();
+const commands = registry.list();
+console.log(commands);
+// Output: ['awk', 'base64', 'basename', 'bc', 'bg', 'cal', ...]
+```
+
+## Command Interface
+
+Commands are async functions that receive a `CommandContext` and return an exit code.
+
+```typescript
+type Command = (ctx: CommandContext) => Promise<number>;
+
+interface CommandContext {
+  args: string[];                    // Command arguments (excluding command name)
+  env: Record<string, string>;       // Environment variables
+  cwd: string;                       // Current working directory
+  vfs: VFS;                          // Virtual filesystem
+  stdout: CommandOutputStream;       // Standard output stream
+  stderr: CommandOutputStream;       // Standard error stream
+  signal: AbortSignal;               // Abort signal for cancellation
+  stdin?: CommandInputStream;        // Standard input stream (optional)
+  setRawMode?: (enabled: boolean) => void; // Enable raw mode (optional)
+}
+
+interface CommandOutputStream {
+  write(text: string): void;
+}
+
+interface CommandInputStream {
+  read(): Promise<string | null>;    // Read next line (null = EOF)
+  readAll(): Promise<string>;        // Read all remaining input
+}
+```
+
+## Writing Custom Commands
+
+### Basic Command
+
+```typescript
+registry.register('hello', async (ctx) => {
+  ctx.stdout.write('Hello, World!\n');
+  return 0;
+});
+```
+
+### Command with Arguments
+
+```typescript
+registry.register('echo', async (ctx) => {
+  ctx.stdout.write(ctx.args.join(' ') + '\n');
+  return 0;
+});
+```
+
+### Command with Options
+
+```typescript
+registry.register('greet', async (ctx) => {
+  const args = ctx.args;
+  let loud = false;
+  let name = 'stranger';
+  
+  // Parse flags
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '-l' || args[i] === '--loud') {
+      loud = true;
+    } else {
+      name = args[i];
+    }
+  }
+  
+  const greeting = `Hello, ${name}!`;
+  ctx.stdout.write(loud ? greeting.toUpperCase() : greeting);
+  ctx.stdout.write('\n');
+  return 0;
+});
+```
+
+### Command with VFS Operations
+
+```typescript
+registry.register('create-project', async (ctx) => {
+  const projectName = ctx.args[0];
+  
+  if (!projectName) {
+    ctx.stderr.write('Usage: create-project <name>\n');
+    return 1;
+  }
+  
+  const projectPath = `${ctx.cwd}/${projectName}`;
+  
+  try {
+    // Create directory structure
+    ctx.vfs.mkdir(projectPath, { recursive: true });
+    ctx.vfs.mkdir(`${projectPath}/src`);
+    ctx.vfs.mkdir(`${projectPath}/tests`);
+    
+    // Create files
+    ctx.vfs.writeFile(`${projectPath}/package.json`, JSON.stringify({
+      name: projectName,
+      version: '1.0.0'
+    }, null, 2));
+    
+    ctx.vfs.writeFile(`${projectPath}/README.md`, `# ${projectName}`);
+    ctx.vfs.writeFile(`${projectPath}/src/index.js`, 'console.log("Hello!");');
+    
+    ctx.stdout.write(`Project ${projectName} created!\n`);
+    return 0;
+  } catch (e) {
+    ctx.stderr.write(`Error: ${e.message}\n`);
+    return 1;
+  }
+});
+```
+
+### Command with stdin
+
+```typescript
+registry.register('count-lines', async (ctx) => {
+  if (!ctx.stdin) {
+    ctx.stderr.write('Error: stdin required\n');
+    return 1;
+  }
+  
+  const input = await ctx.stdin.readAll();
+  const lines = input.split('\n').length;
+  ctx.stdout.write(`${lines} lines\n`);
+  return 0;
+});
+```
+
+### Command with Cancellation
+
+```typescript
+registry.register('long-task', async (ctx) => {
+  for (let i = 0; i < 100; i++) {
+    // Check for cancellation
+    if (ctx.signal.aborted) {
+      ctx.stderr.write('Task cancelled\n');
+      return 130; // 128 + SIGINT
+    }
+    
+    ctx.stdout.write(`Processing step ${i + 1}/100\n`);
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  
+  ctx.stdout.write('Task complete!\n');
+  return 0;
+});
+```
+
+### Interactive Command (Raw Mode)
+
+```typescript
+registry.register('interactive', async (ctx) => {
+  if (!ctx.stdin || !ctx.setRawMode) {
+    ctx.stderr.write('Error: interactive mode not supported\n');
+    return 1;
+  }
+  
+  ctx.setRawMode(true);
+  ctx.stdout.write('Press any key (q to quit)\n');
+  
+  while (true) {
+    const char = await ctx.stdin.read();
+    if (!char || char === 'q') break;
+    
+    ctx.stdout.write(`You pressed: ${char}\n`);
+  }
+  
+  ctx.setRawMode(false);
+  return 0;
+});
+```
+
+## Built-in Commands
+
+The `createDefaultRegistry()` function registers these commands:
+
+### File System
+
+- `ls` - List directory contents
+- `cat` - Concatenate and print files
+- `mkdir` - Create directories
+- `rm` - Remove files
+- `cp` - Copy files
+- `mv` - Move/rename files
+- `touch` - Create empty files or update timestamps
+- `find` - Search for files
+- `tree` - Display directory tree
+- `stat` - Display file status
+- `ln` - Create links
+- `du` - Disk usage
+- `df` - Disk free space
+- `chmod` - Change file modes
+- `file` - Determine file type
+- `rmdir` - Remove directories
+- `realpath` - Resolve absolute path
+- `basename` - Extract filename
+- `dirname` - Extract directory name
+- `mktemp` - Create temporary file
+- `chown` - Change file owner
+
+### Text Processing
+
+- `grep` - Search text patterns
+- `head` - Output first lines
+- `tail` - Output last lines
+- `wc` - Word count
+- `sort` - Sort lines
+- `uniq` - Remove duplicate lines
+- `cut` - Cut columns
+- `tr` - Translate characters
+- `sed` - Stream editor
+- `awk` - Pattern scanning
+- `diff` - Compare files
+- `nl` - Number lines
+- `rev` - Reverse lines
+- `nano` - Text editor
+- `less` - File pager
+- `tac` - Reverse cat
+- `seq` - Generate sequences
+- `base64` - Base64 encoding
+- `strings` - Extract printable strings
+
+### I/O Utilities
+
+- `tee` - Duplicate output
+- `xargs` - Build command lines
+- `yes` - Repeat string
+- `printf` - Formatted output
+
+### System
+
+- `env` - Show environment
+- `uname` - System information
+- `date` - Current date/time
+- `sleep` - Delay for time
+- `uptime` - System uptime
+- `whoami` - Current user
+- `hostname` - System hostname
+- `free` - Memory usage
+- `which` - Locate command
+- `node` - Node.js runtime
+- `cal` - Calendar
+- `bc` - Calculator
+- `man` - Manual pages
+- `sha256sum` - Checksum
+- `sl` - Steam locomotive
+- `fastfetch` / `neofetch` - System info
+
+### Network
+
+- `curl` - Transfer data
+- `wget` - Download files
+- `ping` - Test connectivity
+- `dig` - DNS lookup
+
+### Archive
+
+- `tar` - Tape archive
+- `gzip` - Compress files
+- `gunzip` - Decompress files
+- `zip` - Create zip archives
+- `unzip` - Extract zip archives
+
+## Exit Codes
+
+Commands should return standard Unix exit codes:
+
+- `0` - Success
+- `1` - General error
+- `2` - Misuse of command (invalid arguments)
+- `126` - Command cannot execute
+- `127` - Command not found
+- `128 + n` - Fatal error signal "n" (e.g., 130 = SIGINT/Ctrl+C)
+
+**Example:**
+
+```typescript
+registry.register('test-command', async (ctx) => {
+  if (ctx.args.length === 0) {
+    ctx.stderr.write('Error: missing argument\n');
+    return 2; // Invalid usage
+  }
+  
+  try {
+    // Do work...
+    return 0; // Success
+  } catch (e) {
+    ctx.stderr.write(`Error: ${e.message}\n`);
+    return 1; // General error
+  }
+});
+```
+
+## Source Location
+
+```typescript
+// src/commands/registry.ts
+export class CommandRegistry {
+  register(name: string, command: Command): void;
+  registerLazy(name: string, loader: () => Promise<{ default: Command }>): void;
+  unregister(name: string): void;
+  async resolve(name: string): Promise<Command | undefined>;
+  list(): string[];
+}
+
+export function createDefaultRegistry(): CommandRegistry;
+```

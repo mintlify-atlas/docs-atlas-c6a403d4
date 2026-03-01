@@ -1,0 +1,775 @@
+---
+title: 'VFS'
+description: 'Virtual filesystem with mount support, persistence, and content chunking'
+---
+
+## Overview
+
+The `VFS` (Virtual File System) class provides a complete in-memory Unix-like filesystem with support for mounting external providers, content chunking for large files, and filesystem watching.
+
+## Creating a VFS
+
+```typescript
+import { VFS } from '@lifo/core';
+
+const vfs = new VFS();
+```
+
+## Constructor
+
+```typescript
+constructor(contentStore?: ContentStore)
+```
+
+<ParamField path="contentStore" type="ContentStore" optional>
+  Content store for chunked large files. Defaults to new ContentStore().
+</ParamField>
+
+## File Operations
+
+### readFile()
+
+Read file contents as binary data.
+
+```typescript
+readFile(path: string): Uint8Array
+```
+
+<ParamField path="path" type="string" required>
+  File path to read
+</ParamField>
+
+<ResponseField name="data" type="Uint8Array">
+  File contents as binary data
+</ResponseField>
+
+**Example:**
+
+```typescript
+const vfs = new VFS();
+vfs.writeFile('/test.txt', 'Hello');
+const data = vfs.readFile('/test.txt');
+console.log(data); // Uint8Array [72, 101, 108, 108, 111]
+```
+
+**Throws:** `VFSError` with code:
+- `ENOENT` - File or directory does not exist
+- `EISDIR` - Path is a directory, not a file
+
+### readFileString()
+
+Read file contents as a UTF-8 string.
+
+```typescript
+readFileString(path: string): string
+```
+
+<ParamField path="path" type="string" required>
+  File path to read
+</ParamField>
+
+<ResponseField name="content" type="string">
+  File contents as UTF-8 string
+</ResponseField>
+
+**Example:**
+
+```typescript
+vfs.writeFile('/config.json', '{"key": "value"}');
+const content = vfs.readFileString('/config.json');
+console.log(JSON.parse(content)); // { key: 'value' }
+```
+
+### writeFile()
+
+Write file contents. Creates or overwrites the file.
+
+```typescript
+writeFile(path: string, content: string | Uint8Array): void
+```
+
+<ParamField path="path" type="string" required>
+  File path to write
+</ParamField>
+
+<ParamField path="content" type="string | Uint8Array" required>
+  File content (string or binary data)
+</ParamField>
+
+**Example:**
+
+```typescript
+// Write text
+vfs.writeFile('/hello.txt', 'Hello, World!');
+
+// Write binary
+const binary = new Uint8Array([0x89, 0x50, 0x4E, 0x47]);
+vfs.writeFile('/image.png', binary);
+
+// Overwrite existing file
+vfs.writeFile('/hello.txt', 'New content');
+```
+
+**Throws:** `VFSError` with code:
+- `ENOENT` - Parent directory does not exist
+- `EISDIR` - Path is a directory
+- `EINVAL` - Path is on a read-only mounted filesystem
+
+**Note:** Files >= 1MB are automatically chunked into the ContentStore.
+
+### appendFile()
+
+Append content to a file. Creates the file if it doesn't exist.
+
+```typescript
+appendFile(path: string, content: string | Uint8Array): void
+```
+
+<ParamField path="path" type="string" required>
+  File path to append to
+</ParamField>
+
+<ParamField path="content" type="string | Uint8Array" required>
+  Content to append
+</ParamField>
+
+**Example:**
+
+```typescript
+vfs.writeFile('/log.txt', 'Line 1\n');
+vfs.appendFile('/log.txt', 'Line 2\n');
+vfs.appendFile('/log.txt', 'Line 3\n');
+console.log(vfs.readFileString('/log.txt'));
+// Output:
+// Line 1
+// Line 2
+// Line 3
+```
+
+### exists()
+
+Check if a path exists.
+
+```typescript
+exists(path: string): boolean
+```
+
+<ParamField path="path" type="string" required>
+  Path to check
+</ParamField>
+
+<ResponseField name="exists" type="boolean">
+  True if the path exists (file or directory)
+</ResponseField>
+
+**Example:**
+
+```typescript
+vfs.writeFile('/test.txt', 'data');
+console.log(vfs.exists('/test.txt')); // true
+console.log(vfs.exists('/missing.txt')); // false
+```
+
+### stat()
+
+Get file or directory metadata.
+
+```typescript
+stat(path: string): Stat
+```
+
+<ParamField path="path" type="string" required>
+  Path to stat
+</ParamField>
+
+<ResponseField name="stat" type="Stat">
+  File or directory metadata
+  
+  <Expandable title="properties">
+    <ResponseField name="type" type="'file' | 'directory'">
+      File type
+    </ResponseField>
+    
+    <ResponseField name="size" type="number">
+      Size in bytes (for files) or number of children (for directories)
+    </ResponseField>
+    
+    <ResponseField name="ctime" type="number">
+      Creation time (Unix timestamp in milliseconds)
+    </ResponseField>
+    
+    <ResponseField name="mtime" type="number">
+      Modification time (Unix timestamp in milliseconds)
+    </ResponseField>
+    
+    <ResponseField name="mode" type="number">
+      Unix file mode (e.g., 0o644 for files, 0o755 for directories)
+    </ResponseField>
+    
+    <ResponseField name="mime" type="string" optional>
+      MIME type (files only, auto-detected from extension)
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+**Example:**
+
+```typescript
+vfs.writeFile('/doc.pdf', 'PDF data');
+const stat = vfs.stat('/doc.pdf');
+console.log(stat.type);  // 'file'
+console.log(stat.size);  // 8
+console.log(stat.mime);  // 'application/pdf'
+console.log(new Date(stat.mtime)); // 2026-03-01T...
+```
+
+**Throws:** `VFSError` with code `ENOENT` if path does not exist.
+
+### unlink()
+
+Delete a file.
+
+```typescript
+unlink(path: string): void
+```
+
+<ParamField path="path" type="string" required>
+  File path to delete
+</ParamField>
+
+**Example:**
+
+```typescript
+vfs.writeFile('/temp.txt', 'data');
+vfs.unlink('/temp.txt');
+console.log(vfs.exists('/temp.txt')); // false
+```
+
+**Throws:** `VFSError` with code:
+- `ENOENT` - File does not exist
+- `EISDIR` - Path is a directory (use rmdir instead)
+- `EINVAL` - Path is on a read-only filesystem
+
+### rename()
+
+Rename or move a file or directory.
+
+```typescript
+rename(oldPath: string, newPath: string): void
+```
+
+<ParamField path="oldPath" type="string" required>
+  Current path
+</ParamField>
+
+<ParamField path="newPath" type="string" required>
+  New path
+</ParamField>
+
+**Example:**
+
+```typescript
+vfs.writeFile('/old.txt', 'data');
+vfs.rename('/old.txt', '/new.txt');
+console.log(vfs.exists('/old.txt')); // false
+console.log(vfs.exists('/new.txt')); // true
+
+// Move between directories
+vfs.mkdir('/src');
+vfs.mkdir('/dst');
+vfs.writeFile('/src/file.txt', 'data');
+vfs.rename('/src/file.txt', '/dst/file.txt');
+```
+
+**Throws:** `VFSError` with code:
+- `ENOENT` - Source path does not exist
+- `EINVAL` - Cannot rename across mount boundaries
+
+### copyFile()
+
+Copy a file.
+
+```typescript
+copyFile(src: string, dest: string): void
+```
+
+<ParamField path="src" type="string" required>
+  Source file path
+</ParamField>
+
+<ParamField path="dest" type="string" required>
+  Destination file path
+</ParamField>
+
+**Example:**
+
+```typescript
+vfs.writeFile('/original.txt', 'data');
+vfs.copyFile('/original.txt', '/copy.txt');
+console.log(vfs.readFileString('/copy.txt')); // 'data'
+```
+
+**Throws:** `VFSError` with code:
+- `ENOENT` - Source file does not exist
+- `EISDIR` - Source is a directory
+
+### touch()
+
+Create an empty file or update the modification time of an existing file.
+
+```typescript
+touch(path: string): void
+```
+
+<ParamField path="path" type="string" required>
+  File path to touch
+</ParamField>
+
+**Example:**
+
+```typescript
+vfs.touch('/new.txt');
+console.log(vfs.exists('/new.txt')); // true
+console.log(vfs.readFileString('/new.txt')); // ''
+
+vfs.writeFile('/existing.txt', 'data');
+const before = vfs.stat('/existing.txt').mtime;
+vfs.touch('/existing.txt');
+const after = vfs.stat('/existing.txt').mtime;
+console.log(after > before); // true
+```
+
+## Directory Operations
+
+### mkdir()
+
+Create a directory.
+
+```typescript
+mkdir(path: string, options?: { recursive?: boolean }): void
+```
+
+<ParamField path="path" type="string" required>
+  Directory path to create
+</ParamField>
+
+<ParamField path="options" type="object" optional>
+  <Expandable title="properties">
+    <ParamField path="recursive" type="boolean" default="false">
+      Create parent directories if they don't exist
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+**Example:**
+
+```typescript
+// Simple mkdir
+vfs.mkdir('/test');
+
+// Recursive mkdir
+vfs.mkdir('/a/b/c/d', { recursive: true });
+console.log(vfs.exists('/a/b/c/d')); // true
+```
+
+**Throws:** `VFSError` with code:
+- `ENOENT` - Parent directory does not exist (without recursive)
+- `EEXIST` - Directory already exists
+- `ENOTDIR` - Parent path is not a directory
+- `EINVAL` - Path is on a read-only filesystem
+
+### rmdir()
+
+Remove an empty directory.
+
+```typescript
+rmdir(path: string): void
+```
+
+<ParamField path="path" type="string" required>
+  Directory path to remove
+</ParamField>
+
+**Example:**
+
+```typescript
+vfs.mkdir('/empty');
+vfs.rmdir('/empty');
+console.log(vfs.exists('/empty')); // false
+```
+
+**Throws:** `VFSError` with code:
+- `ENOENT` - Directory does not exist
+- `ENOTDIR` - Path is not a directory
+- `ENOTEMPTY` - Directory is not empty
+- `EINVAL` - Path is on a read-only filesystem
+
+### rmdirRecursive()
+
+Recursively remove a directory and all its contents.
+
+```typescript
+rmdirRecursive(path: string): void
+```
+
+<ParamField path="path" type="string" required>
+  Directory path to remove recursively
+</ParamField>
+
+**Example:**
+
+```typescript
+vfs.mkdir('/project/src', { recursive: true });
+vfs.writeFile('/project/src/index.js', 'code');
+vfs.writeFile('/project/README.md', 'docs');
+
+vfs.rmdirRecursive('/project');
+console.log(vfs.exists('/project')); // false
+```
+
+**Throws:** `VFSError` with code:
+- `ENOENT` - Directory does not exist
+- `ENOTDIR` - Path is not a directory
+
+### readdir()
+
+List directory contents.
+
+```typescript
+readdir(path: string): Dirent[]
+```
+
+<ParamField path="path" type="string" required>
+  Directory path to list
+</ParamField>
+
+<ResponseField name="entries" type="Dirent[]">
+  Array of directory entries
+  
+  <Expandable title="Dirent properties">
+    <ResponseField name="name" type="string">
+      Entry name
+    </ResponseField>
+    
+    <ResponseField name="type" type="'file' | 'directory'">
+      Entry type
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+**Example:**
+
+```typescript
+vfs.mkdir('/dir');
+vfs.writeFile('/dir/a.txt', 'A');
+vfs.writeFile('/dir/b.txt', 'B');
+vfs.mkdir('/dir/subdir');
+
+const entries = vfs.readdir('/dir');
+for (const entry of entries) {
+  console.log(entry.name, entry.type);
+}
+// Output:
+// a.txt file
+// b.txt file
+// subdir directory
+```
+
+**Throws:** `VFSError` with code:
+- `ENOENT` - Directory does not exist
+- `ENOTDIR` - Path is not a directory
+
+### readdirStat()
+
+List directory contents with full stat information.
+
+```typescript
+readdirStat(path: string): Array<Dirent & Stat>
+```
+
+<ParamField path="path" type="string" required>
+  Directory path to list
+</ParamField>
+
+<ResponseField name="entries" type="Array<Dirent & Stat>">
+  Array of directory entries with stat info
+</ResponseField>
+
+**Example:**
+
+```typescript
+vfs.mkdir('/dir');
+vfs.writeFile('/dir/small.txt', 'Hi');
+vfs.writeFile('/dir/large.txt', 'x'.repeat(1000));
+
+const entries = vfs.readdirStat('/dir');
+for (const entry of entries) {
+  console.log(`${entry.name}: ${entry.size} bytes, ${entry.type}`);
+}
+// Output:
+// small.txt: 2 bytes, file
+// large.txt: 1000 bytes, file
+```
+
+## Mount System
+
+### mount()
+
+Mount a provider at an arbitrary path.
+
+```typescript
+mount(path: string, provider: VirtualProvider | MountProvider): void
+```
+
+<ParamField path="path" type="string" required>
+  Virtual path where the provider will be mounted (e.g., "/proc", "/mnt/project")
+</ParamField>
+
+<ParamField path="provider" type="VirtualProvider | MountProvider" required>
+  Provider implementing the VirtualProvider or MountProvider interface
+</ParamField>
+
+**Example:**
+
+```typescript
+import { VFS, NativeFsProvider } from '@lifo/core';
+import fs from 'node:fs';
+
+const vfs = new VFS();
+
+// Mount a native filesystem directory (Node.js only)
+const provider = new NativeFsProvider('/home/user/project', fs);
+vfs.mount('/mnt/project', provider);
+
+// Now VFS operations on /mnt/project/* delegate to the native filesystem
+const files = vfs.readdir('/mnt/project');
+```
+
+### unmount()
+
+Unmount a previously mounted provider.
+
+```typescript
+unmount(path: string): void
+```
+
+<ParamField path="path" type="string" required>
+  Virtual path that was passed to mount()
+</ParamField>
+
+**Example:**
+
+```typescript
+vfs.unmount('/mnt/project');
+```
+
+**Throws:** `VFSError` with code `EINVAL` if path is not mounted.
+
+### registerProvider()
+
+Backward-compatible alias for `mount()`.
+
+```typescript
+registerProvider(prefix: string, provider: VirtualProvider): void
+```
+
+## Filesystem Watching
+
+### watch()
+
+Watch for filesystem changes.
+
+```typescript
+// Global watch (all changes)
+watch(listener: VFSWatchListener): () => void
+
+// Scoped watch (changes under a specific path)
+watch(path: string, listener: VFSWatchListener): () => void
+```
+
+<ParamField path="path" type="string" optional>
+  Path to watch (if omitted, watches all changes)
+</ParamField>
+
+<ParamField path="listener" type="VFSWatchListener" required>
+  Callback function invoked on filesystem changes
+</ParamField>
+
+<ResponseField name="unwatch" type="() => void">
+  Function to stop watching
+</ResponseField>
+
+**Example:**
+
+```typescript
+// Watch all changes
+const unwatch = vfs.watch((event) => {
+  console.log(event.type, event.path);
+});
+
+vfs.writeFile('/test.txt', 'data'); // Logs: create /test.txt
+vfs.writeFile('/test.txt', 'new');  // Logs: modify /test.txt
+vfs.unlink('/test.txt');            // Logs: delete /test.txt
+
+unwatch(); // Stop watching
+
+// Watch specific directory
+const unwatchHome = vfs.watch('/home/user', (event) => {
+  console.log('Home changed:', event.type, event.path);
+});
+
+vfs.writeFile('/home/user/file.txt', 'data'); // Triggers callback
+vfs.writeFile('/tmp/other.txt', 'data');      // Does not trigger
+```
+
+**Event types:**
+
+```typescript
+interface VFSWatchEvent {
+  type: 'create' | 'modify' | 'delete' | 'rename';
+  path: string;           // Affected path
+  oldPath?: string;       // Previous path (rename events only)
+  fileType: 'file' | 'directory';
+}
+```
+
+## Serialization
+
+### getRoot()
+
+Get the root INode for serialization.
+
+```typescript
+getRoot(): INode
+```
+
+<ResponseField name="root" type="INode">
+  Root filesystem node
+</ResponseField>
+
+**Example:**
+
+```typescript
+const root = vfs.getRoot();
+const serialized = JSON.stringify(root);
+```
+
+### loadFromSerialized()
+
+Load filesystem from a serialized root node.
+
+```typescript
+loadFromSerialized(root: INode): void
+```
+
+<ParamField path="root" type="INode" required>
+  Root node to restore
+</ParamField>
+
+**Example:**
+
+```typescript
+const root = JSON.parse(serialized);
+const vfs = new VFS();
+vfs.loadFromSerialized(root);
+```
+
+## Type Definitions
+
+```typescript
+interface Stat {
+  type: 'file' | 'directory';
+  size: number;
+  ctime: number;  // Creation time (ms since epoch)
+  mtime: number;  // Modification time (ms since epoch)
+  mode: number;   // Unix file mode (e.g., 0o644)
+  mime?: string;  // MIME type (files only)
+}
+
+interface Dirent {
+  name: string;
+  type: 'file' | 'directory';
+}
+
+interface VFSWatchEvent {
+  type: 'create' | 'modify' | 'delete' | 'rename';
+  path: string;
+  oldPath?: string;  // Only for 'rename' events
+  fileType: 'file' | 'directory';
+}
+
+type VFSWatchListener = (event: VFSWatchEvent) => void;
+
+class VFSError extends Error {
+  code: 'ENOENT' | 'EEXIST' | 'ENOTDIR' | 'EISDIR' | 'ENOTEMPTY' | 'EINVAL';
+}
+```
+
+## Content Chunking
+
+Files >= 1MB are automatically chunked into the ContentStore:
+
+- **Small files (&lt; 1MB):** Stored inline in the INode
+- **Large files (>= 1MB):** Split into 256KB chunks, stored in ContentStore
+
+This optimization reduces memory usage for large files while keeping small files fast.
+
+**Example:**
+
+```typescript
+const vfs = new VFS();
+
+// Small file - stored inline
+vfs.writeFile('/small.txt', 'x'.repeat(100_000)); // 100 KB
+
+// Large file - automatically chunked
+vfs.writeFile('/large.txt', 'x'.repeat(2_000_000)); // 2 MB
+
+const stat = vfs.stat('/large.txt');
+console.log(stat.size); // 2000000 (size is still accurate)
+
+// Reading works transparently
+const content = vfs.readFileString('/large.txt');
+console.log(content.length); // 2000000
+```
+
+## Source Location
+
+```typescript
+// src/kernel/vfs/VFS.ts (604 lines)
+export class VFS {
+  constructor(contentStore?: ContentStore);
+  
+  // File operations
+  readFile(path: string): Uint8Array;
+  readFileString(path: string): string;
+  writeFile(path: string, content: string | Uint8Array): void;
+  appendFile(path: string, content: string | Uint8Array): void;
+  exists(path: string): boolean;
+  stat(path: string): Stat;
+  unlink(path: string): void;
+  rename(oldPath: string, newPath: string): void;
+  copyFile(src: string, dest: string): void;
+  touch(path: string): void;
+  
+  // Directory operations
+  mkdir(path: string, options?: { recursive?: boolean }): void;
+  rmdir(path: string): void;
+  rmdirRecursive(path: string): void;
+  readdir(path: string): Dirent[];
+  readdirStat(path: string): Array<Dirent & Stat>;
+  
+  // Mount system
+  mount(path: string, provider: VirtualProvider | MountProvider): void;
+  unmount(path: string): void;
+  registerProvider(prefix: string, provider: VirtualProvider): void;
+  
+  // Watching
+  watch(listener: VFSWatchListener): () => void;
+  watch(path: string, listener: VFSWatchListener): () => void;
+  
+  // Serialization
+  getRoot(): INode;
+  loadFromSerialized(root: INode): void;
+}
+```
