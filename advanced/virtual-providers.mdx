@@ -49,9 +49,9 @@ interface Dirent {
 Create a provider that exposes system time:
 
 ```typescript
-import type { VirtualProvider, Stat, Dirent } from '@lifo/core/kernel/vfs/types';
-import { VFSError, ErrorCode } from '@lifo/core/kernel/vfs/types';
-import { encode } from '@lifo/core/utils/encoding';
+import type { VirtualProvider, Stat, Dirent } from '@lifo-sh/core/kernel/vfs/types';
+import { VFSError, ErrorCode } from '@lifo-sh/core/kernel/vfs/types';
+import { encode } from '@lifo-sh/core/utils/encoding';
 
 export class TimeProvider implements VirtualProvider {
   private files = new Set(['timestamp', 'iso', 'unix']);
@@ -127,7 +127,7 @@ export class TimeProvider implements VirtualProvider {
 Mount your provider to a path:
 
 ```typescript
-import { VFS } from '@lifo/core/kernel/vfs';
+import { VFS } from '@lifo-sh/core/kernel/vfs';
 
 const vfs = new VFS();
 const timeProvider = new TimeProvider();
@@ -459,7 +459,7 @@ export class ProcessProvider implements VirtualProvider {
 Always use `VFSError` for consistent error reporting:
 
 ```typescript
-import { VFSError, ErrorCode } from '@lifo/core/kernel/vfs/types';
+import { VFSError, ErrorCode } from '@lifo-sh/core/kernel/vfs/types';
 
 // File not found
 throw new VFSError(ErrorCode.ENOENT, `'${path}': no such file`);

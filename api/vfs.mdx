@@ -10,7 +10,7 @@ The `VFS` (Virtual File System) class provides a complete in-memory Unix-like fi
 ## Creating a VFS
 
 ```typescript
-import { VFS } from '@lifo/core';
+import { VFS } from '@lifo-sh/core';
 
 const vfs = new VFS();
 ```
@@ -532,7 +532,7 @@ mount(path: string, provider: VirtualProvider | MountProvider): void
 **Example:**
 
 ```typescript
-import { VFS, NativeFsProvider } from '@lifo/core';
+import { VFS, NativeFsProvider } from '@lifo-sh/core';
 import fs from 'node:fs';
 
 const vfs = new VFS();

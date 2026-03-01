@@ -332,7 +332,7 @@ imgproc photo.jpg thumbnail.jpg
 You can also register and use packages programmatically:
 
 ```typescript
-import { Sandbox } from '@lifo/core';
+import { Sandbox } from '@lifo-sh/core';
 
 const sandbox = await Sandbox.create();
 
@@ -387,12 +387,12 @@ export LIFO_CDN=https://cdn.skypack.dev
 ## Source Code Reference
 
 Package system implementation:
-- Command: [lifo.ts:1-488](/api-reference/commands/lifo)
-- Runtime: [lifo-runtime.ts](/api-reference/pkg/lifo-runtime)
-- Dev links: [lifo-dev.ts](/api-reference/pkg/lifo-dev)
+- Command: See [Commands: System](/commands/system) for `lifo` and `pkg` commands
+- Runtime: Exported via `createLifoCommand` and `readLifoManifest` from `@lifo-sh/core`
+- Dev links: Exported via `linkPackage` and `unlinkPackage` from `@lifo-sh/core`
 
 ## API Reference
 
 For complete API details, see:
-- [CommandContext API](/api-reference/command-context)
-- [LifoAPI](/api-reference/lifo-api)
+- [CommandContext API](/api/command-registry#command-interface)
+- [Creating Packages guide](/advanced/creating-packages)

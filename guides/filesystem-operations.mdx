@@ -167,7 +167,7 @@ const content = await sandbox.fs.readFile('file.txt'); // reads /tmp/file.txt
 ## Complete Example: Project Setup
 
 ```typescript
-import { Sandbox } from '@lifo/core';
+import { Sandbox } from '@lifo-sh/core';
 
 async function setupProject() {
   const sandbox = await Sandbox.create();
@@ -288,4 +288,4 @@ if (await sandbox.fs.exists('/etc/config.json')) {
 
 ## API Reference
 
-See the [SandboxFs API reference](/api-reference/sandbox-fs) for complete type signatures and details.
+See the [SandboxFs API reference](/api/sandbox#sandboxfs-interface) for complete type signatures and details.

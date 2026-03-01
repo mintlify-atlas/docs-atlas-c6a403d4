@@ -420,7 +420,7 @@ function resolveNodeModule(name: string, fromDir: string): string | null {
 Programmatically read package metadata:
 
 ```typescript
-import { readLifoManifest } from '@lifo/core/pkg/lifo-runtime';
+import { readLifoManifest } from '@lifo-sh/core/pkg/lifo-runtime';
 
 // src/pkg/lifo-runtime.ts:550-558
 const manifest = readLifoManifest(vfs, '/usr/share/pkg/node_modules/my-package');
@@ -460,7 +460,7 @@ Test your commands using the Lifo test utilities:
 
 ```javascript
 import { describe, it, expect } from 'vitest';
-import { createTestContext } from '@lifo/core/testing';
+import { createTestContext } from '@lifo-sh/core/testing';
 import greetCommand from './src/greet.js';
 
 describe('greet command', () => {

@@ -10,7 +10,7 @@ The `Kernel` class manages the core system components: the virtual filesystem (V
 ## Creating a Kernel
 
 ```typescript
-import { Kernel } from '@lifo/core';
+import { Kernel } from '@lifo-sh/core';
 
 const kernel = new Kernel();
 await kernel.boot({ persist: true });
@@ -29,7 +29,7 @@ constructor(backend?: PersistenceBackend)
 **Example:**
 
 ```typescript
-import { Kernel, IndexedDBPersistenceBackend } from '@lifo/core';
+import { Kernel, IndexedDBPersistenceBackend } from '@lifo-sh/core';
 
 const kernel = new Kernel(new IndexedDBPersistenceBackend());
 ```

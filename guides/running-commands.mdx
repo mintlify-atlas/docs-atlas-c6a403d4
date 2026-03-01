@@ -328,7 +328,7 @@ console.log(result.stdout); // "9 words\n"
 ## Complete Example: Build Script
 
 ```typescript
-import { Sandbox } from '@lifo/core';
+import { Sandbox } from '@lifo-sh/core';
 
 async function buildProject() {
   const sandbox = await Sandbox.create({
@@ -376,4 +376,4 @@ buildProject().catch(console.error);
 
 ## API Reference
 
-See the [SandboxCommands API reference](/api-reference/sandbox-commands) for complete type signatures and details.
+See the [SandboxCommands API reference](/api/sandbox#sandboxcommands-interface) for complete type signatures and details.

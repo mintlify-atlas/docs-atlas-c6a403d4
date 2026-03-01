@@ -10,7 +10,7 @@ Lifo supports automatic persistence of the virtual filesystem to IndexedDB in br
 Persistence is enabled via the `persist` option when creating a sandbox:
 
 ```typescript
-import { Sandbox } from '@lifo/core';
+import { Sandbox } from '@lifo-sh/core';
 
 const sandbox = await Sandbox.create({
   persist: true  // Enable IndexedDB persistence
@@ -84,7 +84,7 @@ vfs.loadFromSerialized(restored);
 Here's how to test that persistence works:
 
 ```typescript
-import { Sandbox } from '@lifo/core';
+import { Sandbox } from '@lifo-sh/core';
 
 // First session: create and save data
 async function sessionOne() {
@@ -127,7 +127,7 @@ async function sessionTwo() {
 By default, Lifo uses `IndexedDBPersistenceBackend` for browser environments:
 
 ```typescript
-import { IndexedDBPersistenceBackend } from '@lifo/core';
+import { IndexedDBPersistenceBackend } from '@lifo-sh/core';
 
 // This is used internally by default
 const backend = new IndexedDBPersistenceBackend();
@@ -145,8 +145,8 @@ await backend.saveTree(serialized);
 You can implement a custom persistence backend by implementing the `PersistenceBackend` interface:
 
 ```typescript
-import { Kernel, PersistenceBackend } from '@lifo/core';
-import type { SerializedNode } from '@lifo/core';
+import { Kernel, PersistenceBackend } from '@lifo-sh/core';
+import type { SerializedNode } from '@lifo-sh/core';
 
 class LocalStorageBackend implements PersistenceBackend {
   private key = 'lifo-vfs-tree';
@@ -242,7 +242,7 @@ await sandbox2.fs.importSnapshot(snapshot);
 Here's a complete example demonstrating persistence in a browser application:
 
 ```typescript
-import { Sandbox } from '@lifo/core';
+import { Sandbox } from '@lifo-sh/core';
 
 class PersistentTerminal {
   private sandbox: Sandbox | null = null;
@@ -337,4 +337,4 @@ location.reload();
 
 ## API Reference
 
-See the [Kernel API reference](/api-reference/kernel) for details on the persistence system internals.
+See the [Persistence API reference](/api/persistence) and [Kernel API reference](/api/kernel) for details on the persistence system internals.

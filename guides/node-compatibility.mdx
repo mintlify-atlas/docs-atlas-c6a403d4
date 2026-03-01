@@ -34,7 +34,7 @@ Lifo includes compatibility shims for **15 core Node.js modules**:
 The easiest way to run Node.js code is with the built-in `node` command:
 
 ```typescript
-import { Sandbox } from '@lifo/core';
+import { Sandbox } from '@lifo-sh/core';
 
 const sandbox = await Sandbox.create({
   files: {
@@ -292,7 +292,7 @@ server.listen(8080, () => {
 Here's a complete example running a simple HTTP server:
 
 ```typescript
-import { Sandbox } from '@lifo/core';
+import { Sandbox } from '@lifo-sh/core';
 
 const sandbox = await Sandbox.create({
   files: {
@@ -397,4 +397,4 @@ See the [Package System guide](/guides/package-system) to learn how to install a
 
 ## API Reference
 
-See the [Node Compatibility API reference](/api-reference/node-compat) for complete module documentation.
+See the [Node Compatibility API reference](/api/node-modules) for complete module documentation.

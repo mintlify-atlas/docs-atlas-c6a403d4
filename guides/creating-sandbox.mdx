@@ -12,7 +12,7 @@ The `Sandbox` class is the main entry point for working with Lifo. It orchestrat
     The simplest way to create a sandbox is with no options:
 
     ```typescript
-    import { Sandbox } from '@lifo/core';
+    import { Sandbox } from '@lifo-sh/core';
 
     const sandbox = await Sandbox.create();
 
@@ -82,7 +82,7 @@ The `Sandbox` class is the main entry point for working with Lifo. It orchestrat
 For interactive terminal use, pass an `ITerminal` instance:
 
 ```typescript
-import { Sandbox } from '@lifo/core';
+import { Sandbox } from '@lifo-sh/core';
 import { Terminal } from '@xterm/xterm';
 
 const term = new Terminal({
@@ -191,7 +191,7 @@ sandbox.kernel.portRegistry.set(8080, (req, res) => {
 Here's a complete example that demonstrates common patterns:
 
 ```typescript
-import { Sandbox } from '@lifo/core';
+import { Sandbox } from '@lifo-sh/core';
 
 async function main() {
   // Create configured sandbox
@@ -230,4 +230,4 @@ main().catch(console.error);
 
 ## API Reference
 
-See the [Sandbox API reference](/api-reference/sandbox) for complete details on all options and methods.
+See the [Sandbox API reference](/api/sandbox) for complete details on all options and methods.

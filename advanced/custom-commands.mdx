@@ -56,7 +56,7 @@ interface CommandInputStream {
 Create a command that greets the user:
 
 ```typescript
-import type { Command } from '@lifo/core/commands/types';
+import type { Command } from '@lifo-sh/core/commands/types';
 
 const greet: Command = async (ctx) => {
   const name = ctx.args[0] || 'World';
@@ -87,9 +87,9 @@ Now you can run `greet Alice` in the shell.
 Commands can read and write files through the VFS:
 
 ```typescript
-import type { Command } from '@lifo/core/commands/types';
-import { resolve } from '@lifo/core/utils/path';
-import { VFSError } from '@lifo/core/kernel/vfs';
+import type { Command } from '@lifo-sh/core/commands/types';
+import { resolve } from '@lifo-sh/core/utils/path';
+import { VFSError } from '@lifo-sh/core/kernel/vfs';
 
 const countLines: Command = async (ctx) => {
   if (ctx.args.length === 0) {
@@ -175,7 +175,7 @@ The command module should export a default `Command`:
 
 ```typescript
 // commands/my-command.ts
-import type { Command } from '@lifo/core/commands/types';
+import type { Command } from '@lifo-sh/core/commands/types';
 
 const command: Command = async (ctx) => {
   ctx.stdout.write('Heavy command loaded!\n');
@@ -190,9 +190,9 @@ export default command;
 Here's a complete command that formats JSON files:
 
 ```typescript
-import type { Command } from '@lifo/core/commands/types';
-import { resolve } from '@lifo/core/utils/path';
-import { VFSError } from '@lifo/core/kernel/vfs';
+import type { Command } from '@lifo-sh/core/commands/types';
+import { resolve } from '@lifo-sh/core/utils/path';
+import { VFSError } from '@lifo-sh/core/kernel/vfs';
 
 const jsonFormat: Command = async (ctx) => {
   // Parse options
