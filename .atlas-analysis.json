@@ -1,0 +1,147 @@
+{
+  "projectType": "sdk-library",
+  "projectName": "Lifo",
+  "projectDescription": "A browser-native operating system where the browser is the kernel and Web APIs are syscalls",
+  "theme": "aspen",
+  "primaryColor": "#4CAF50",
+  "lightColor": "#81C784",
+  "darkColor": "#2E7D32",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "installation"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/architecture",
+              "concepts/kernel",
+              "concepts/virtual-filesystem",
+              "concepts/shell",
+              "concepts/sandbox"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/creating-sandbox",
+              "guides/filesystem-operations",
+              "guides/running-commands",
+              "guides/persistence",
+              "guides/node-compatibility",
+              "guides/package-system"
+            ]
+          },
+          {
+            "group": "Commands",
+            "pages": [
+              "commands/overview",
+              "commands/filesystem",
+              "commands/text-processing",
+              "commands/network",
+              "commands/system",
+              "commands/archive"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Core API",
+            "pages": [
+              "api/sandbox",
+              "api/kernel",
+              "api/shell",
+              "api/vfs",
+              "api/command-registry"
+            ]
+          },
+          {
+            "group": "Storage",
+            "pages": [
+              "api/persistence",
+              "api/blob-store",
+              "api/content-store"
+            ]
+          },
+          {
+            "group": "Node Compatibility",
+            "pages": [
+              "api/node-modules",
+              "api/buffer"
+            ]
+          },
+          {
+            "group": "Utilities",
+            "pages": [
+              "api/path",
+              "api/colors",
+              "api/mime"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Advanced",
+        "groups": [
+          {
+            "group": "Extending Lifo",
+            "pages": [
+              "advanced/custom-commands",
+              "advanced/virtual-providers",
+              "advanced/creating-packages"
+            ]
+          },
+          {
+            "group": "Examples",
+            "pages": [
+              "examples/basic-usage",
+              "examples/file-operations",
+              "examples/shell-scripts",
+              "examples/node-runtime"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "60+ Unix-like commands (ls, grep, curl, tar, etc.)",
+    "Virtual filesystem with POSIX-like semantics",
+    "bash-like shell with pipes, redirects, and job control",
+    "IndexedDB persistence for filesystem state",
+    "Node.js compatibility layer for running JavaScript",
+    "Package manager for extending functionality",
+    "Sandbox API for programmatic control",
+    "Browser-native architecture (no WASM, no emulation)"
+  ],
+  "publicApiSurface": [
+    "Sandbox.create()",
+    "Sandbox.commands.run()",
+    "Sandbox.fs.readFile()",
+    "Sandbox.fs.writeFile()",
+    "Kernel.boot()",
+    "VFS.readFile()",
+    "VFS.writeFile()",
+    "VFS.mkdir()",
+    "VFS.mount()",
+    "Shell.execute()",
+    "Shell.getCwd()",
+    "CommandRegistry.register()",
+    "PersistenceManager.save()",
+    "PersistenceManager.load()",
+    "createDefaultRegistry()",
+    "createModuleMap()",
+    "Buffer"
+  ]
+}
